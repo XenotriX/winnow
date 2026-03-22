@@ -22,21 +22,18 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
+from jnav.filter_manager_screen import Filter, FilterManagerScreen
+
 from .detail_tree import DetailTree
 from .filtering import (
     apply_combined_filters,
-    check_filter_warning,
     detect_all_columns,
     flatten_keys,
     get_nested,
     resolve_selected_paths,
 )
 from .parsing import preprocess_entry
-from .tree_rendering import (
-    build_rich_tree,
-    count_tree_nodes,
-    highlight_text,
-)
+from .tree_rendering import build_rich_tree, count_tree_nodes, highlight_text
 
 PRIORITY_KEYS = ("timestamp", "ts", "time", "level", "severity", "message", "msg")
 MAX_CELL_WIDTH = 50
@@ -75,9 +72,6 @@ def _truncate(value: object, width: int = MAX_CELL_WIDTH) -> str:
     if len(s) > width:
         return s[: width - 1] + "\u2026"
     return s
-
-
-
 
 
 def _entry_summary(
@@ -125,175 +119,7 @@ def _compute_col_widths(
 # --- Modal Screens ---
 
 
-def _list_option_prompt(label: str, enabled: bool, combine: str = "and") -> Text:
-    marker = "\u2713" if enabled else " "
-    style = "" if enabled else "dim"
-    prefix = "OR " if combine == "or" else "   "
-    return Text.assemble(
-        (prefix, "italic" if combine == "or" else "dim"),
-        (f"{marker} ", style),
-        (label, style),
-    )
-
-
-class FilterManagerScreen(ModalScreen):
-    DEFAULT_CSS = """
-    FilterManagerScreen {
-        align: center middle;
-    }
-    #filter-modal {
-        width: 70;
-        max-width: 90%;
-        height: auto;
-        max-height: 70%;
-        border: solid $surface-lighten-2;
-        background: $surface;
-        padding: 1 2;
-    }
-    #filter-modal-title {
-        text-style: bold;
-        padding: 0 0 1 0;
-    }
-    #filter-list {
-        height: auto;
-        max-height: 14;
-        border: none;
-    }
-    #filter-add-input {
-        margin: 1 0 0 0;
-    }
-    #filter-add-input.hidden {
-        display: none;
-    }
-    #filter-hints {
-        color: $text-muted;
-        margin: 1 0 0 0;
-    }
-    """
-
-    BINDINGS = [
-        Binding("escape", "maybe_close", "Close", priority=True),
-        Binding("a", "add_mode", "Add", show=False),
-        Binding("e", "edit_mode", "Edit", show=False),
-        Binding("d", "delete", "Delete", show=False),
-        Binding("space", "toggle_item", "Toggle", show=False),
-        Binding("o", "toggle_combine", "AND/OR", show=False),
-    ]
-
-    def __init__(self, filters: list[dict]) -> None:
-        super().__init__()
-        self.filters = filters
-        self._editing_idx: int | None = None
-
-    def compose(self) -> ComposeResult:
-        yield Vertical(
-            Static("Filters", id="filter-modal-title"),
-            OptionList(id="filter-list"),
-            Input(
-                placeholder="jq expression...", id="filter-add-input", classes="hidden"
-            ),
-            Static(
-                "[b]a[/b]:Add  [b]e[/b]:Edit  [b]space[/b]:Toggle  [b]o[/b]:AND/OR  [b]d[/b]:Delete  [b]esc[/b]:Close",
-                id="filter-hints",
-            ),
-            id="filter-modal",
-        )
-
-    def on_mount(self) -> None:
-        self._refresh_list()
-        self.query_one("#filter-list", OptionList).focus()
-
-    def _refresh_list(self, highlight: int | None = None) -> None:
-        ol = self.query_one("#filter-list", OptionList)
-        ol.clear_options()
-        if not self.filters:
-            ol.add_option(Option(Text(" (no filters)", style="dim"), disabled=True))
-        else:
-            for f in self.filters:
-                ol.add_option(
-                    _list_option_prompt(
-                        f.get("label") or f["expr"],
-                        f["enabled"],
-                        f.get("combine", "and"),
-                    )
-                )
-        if highlight is not None and self.filters:
-            ol.highlighted = min(highlight, len(self.filters) - 1)
-
-    def action_toggle_item(self) -> None:
-        ol = self.query_one("#filter-list", OptionList)
-        idx = ol.highlighted
-        if idx is not None and idx < len(self.filters):
-            self.filters[idx]["enabled"] = not self.filters[idx]["enabled"]
-            self._refresh_list(idx)
-
-    def action_toggle_combine(self) -> None:
-        ol = self.query_one("#filter-list", OptionList)
-        idx = ol.highlighted
-        if idx is not None and idx < len(self.filters):
-            current = self.filters[idx].get("combine", "and")
-            self.filters[idx]["combine"] = "or" if current == "and" else "and"
-            self._refresh_list(idx)
-
-    def action_delete(self) -> None:
-        ol = self.query_one("#filter-list", OptionList)
-        idx = ol.highlighted
-        if idx is not None and idx < len(self.filters):
-            self.filters.pop(idx)
-            self._refresh_list(idx)
-
-    def action_add_mode(self) -> None:
-        self._editing_idx = None
-        inp = self.query_one("#filter-add-input", Input)
-        inp.remove_class("hidden")
-        inp.value = ""
-        inp.focus()
-
-    def action_edit_mode(self) -> None:
-        ol = self.query_one("#filter-list", OptionList)
-        idx = ol.highlighted
-        if idx is None or idx >= len(self.filters):
-            return
-        self._editing_idx = idx
-        inp = self.query_one("#filter-add-input", Input)
-        inp.remove_class("hidden")
-        inp.value = self.filters[idx]["expr"]
-        inp.focus()
-
-    @on(Input.Submitted, "#filter-add-input")
-    def on_add_submitted(self, event: Input.Submitted) -> None:
-        expr = event.value.strip()
-        if expr:
-            warning = check_filter_warning(expr)
-            if self._editing_idx is not None:
-                self.filters[self._editing_idx]["expr"] = expr
-                self.filters[self._editing_idx].pop("label", None)
-                highlight = self._editing_idx
-            else:
-                self.filters.append({"expr": expr, "enabled": True})
-                highlight = len(self.filters) - 1
-            if warning:
-                self.notify(warning, severity="warning", timeout=3)
-        else:
-            highlight = self._editing_idx
-        self._editing_idx = None
-        event.input.value = ""
-        self.query_one("#filter-add-input").add_class("hidden")
-        self._refresh_list(highlight)
-        self.query_one("#filter-list", OptionList).focus()
-
-    def action_maybe_close(self) -> None:
-        inp = self.query_one("#filter-add-input", Input)
-        if not inp.has_class("hidden"):
-            self._editing_idx = None
-            inp.add_class("hidden")
-            inp.value = ""
-            self.query_one("#filter-list", OptionList).focus()
-        else:
-            self.dismiss(True)
-
-
-class ColumnManagerScreen(ModalScreen):
+class ColumnManagerScreen(ModalScreen[None]):
     DEFAULT_CSS = """
     ColumnManagerScreen {
         align: center middle;
@@ -476,7 +302,7 @@ HELP_TEXT = """\
 """
 
 
-class HelpScreen(ModalScreen):
+class HelpScreen(ModalScreen[None]):
     DEFAULT_CSS = """
     HelpScreen {
         align: center middle;
@@ -517,7 +343,7 @@ class HelpScreen(ModalScreen):
         self.dismiss(True)
 
 
-class SearchInputScreen(ModalScreen):
+class SearchInputScreen(ModalScreen[None]):
     DEFAULT_CSS = """
     SearchInputScreen {
         align: center middle;
@@ -574,6 +400,7 @@ class LogEntryItem(ListItem):
     def __init__(self, entry_index: int, *children: Static) -> None:
         super().__init__(*children)
         self.entry_index = entry_index
+
 
 # --- Main App ---
 
@@ -692,7 +519,7 @@ class JnavApp(App):
         self._original_entries = entries
         self.all_columns: list[str] = detect_all_columns(self.entries)
         self.base_columns: list[str] = _default_columns(self.all_columns)
-        self.filters: list[dict] = []
+        self.filters: list[Filter] = []
         self.custom_columns: list[dict] = []
         self.visible_indices: list[int] = list(range(len(entries)))
         self._current_detail_entry: dict | None = None
