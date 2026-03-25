@@ -1,50 +1,75 @@
 import json
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, cast
 
-def parse_entries(lines: list[str]) -> list[Any]:
-    """Parse lines into JSON objects"""
-    entries: list[Any] = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-            if isinstance(obj, dict):
-                entries.append(obj)
-        except json.JSONDecodeError:
-            continue
-    return entries
+
+@dataclass
+class ParsedEntry:
+    raw: dict[str, Any]
+    expanded: dict[str, Any]
+    expanded_paths: set[str] = field(default_factory=set)
+
+
+def parse_line(line: str) -> dict[str, Any]:
+    """Parse a single line into a JSON object, or return None if invalid."""
+    line = line.strip()
+    if not line:
+        raise ValueError("Empty line")
+    try:
+        obj = json.loads(line)
+        if isinstance(obj, dict):
+            return cast(dict[str, Any], obj)
+        else:
+            raise ValueError("JSON is not an object")
+    except json.JSONDecodeError:
+        raise ValueError("Invalid JSON")
 
 
 def expand_json_strings(
-    obj: object, path: str = "", json_paths: set[str] | None = None
+    obj: object,
+    path: str = "",
+    expanded_paths: set[str] | None = None,
 ) -> object:
     """Recursively expand JSON-encoded strings, tracking which paths were strings."""
-    if json_paths is None:
-        json_paths = set()
+    if expanded_paths is None:
+        expanded_paths = set()
+
+    # Recurse into dicts
     if isinstance(obj, dict):
+        obj = cast(dict[str, Any], obj)
         return {
-            k: expand_json_strings(v, f"{path}.{k}" if path else k, json_paths)
+            k: expand_json_strings(v, f"{path}.{k}" if path else k, expanded_paths)
             for k, v in obj.items()
         }
+
+    # Recurse into lists
     if isinstance(obj, list):
+        obj = cast(list[Any], obj)
         return [
-            expand_json_strings(item, f"{path}[{i}]", json_paths)
+            expand_json_strings(item, f"{path}[{i}]", expanded_paths)
             for i, item in enumerate(obj)
         ]
+
+    # Try to parse JSON strings
     if isinstance(obj, str) and obj and obj[0] in ("{", "["):
         try:
             parsed = json.loads(obj)
             if isinstance(parsed, (dict, list)):
-                json_paths.add(path)
-                return expand_json_strings(parsed, path, json_paths)
+                parsed = cast(dict[str, Any] | list[Any], parsed)
+                expanded_paths.add(path)
+                return expand_json_strings(parsed, path, expanded_paths)
         except json.JSONDecodeError, ValueError:
             pass
     return obj
 
 
-def preprocess_entry(entry: dict) -> tuple[dict, set[str]]:
-    json_paths: set[str] = set()
-    expanded = expand_json_strings(entry, "", json_paths)
-    return expanded, json_paths
+def preprocess_entry(entry: dict[str, Any]) -> ParsedEntry:
+    """Parse and expand a raw JSON dict into a ParsedEntry."""
+    expanded_paths: set[str] = set()
+    expanded = expand_json_strings(entry, "", expanded_paths)
+    assert isinstance(expanded, dict)
+    return ParsedEntry(
+        raw=entry,
+        expanded=cast(dict[str, Any], expanded),
+        expanded_paths=expanded_paths,
+    )

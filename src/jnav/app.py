@@ -1,5 +1,5 @@
 import json
-import time
+from asyncio import Queue, QueueEmpty
 from datetime import datetime
 from pathlib import Path
 
@@ -10,7 +10,6 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, ListItem, ListView, Static
-from textual.worker import get_current_worker
 
 from jnav.column_manager_screen import ColumnManagerScreen, FieldSelector
 from jnav.filter_manager_screen import Filter, FilterManagerScreen
@@ -20,12 +19,11 @@ from jnav.search_input_screen import SearchInputScreen
 from .detail_tree import DetailTree
 from .filtering import (
     apply_combined_filters,
-    detect_all_columns,
     flatten_keys,
     get_nested,
     resolve_selected_paths,
 )
-from .parsing import preprocess_entry
+from .parsing import ParsedEntry
 from .tree_rendering import build_rich_tree, count_tree_nodes, highlight_text
 
 PRIORITY_KEYS = ("timestamp", "ts", "time", "level", "severity", "message", "msg")
@@ -91,27 +89,6 @@ def _entry_summary(
     return highlight_text(text, search_term)
 
 
-def _compute_col_widths(
-    entries: list[dict],
-    indices: list[int],
-    columns: list[str],
-) -> list[int]:
-    widths = [len(col) for col in columns]
-    for i in indices:
-        entry = entries[i]
-        for j, col in enumerate(columns):
-            val = get_nested(entry, col)
-            s = str(val) if val or val == 0 else ""
-            if col in TS_KEYS:
-                s = _format_timestamp(s)
-            s = _truncate(s, MAX_CELL_WIDTH)
-            widths[j] = max(widths[j], len(s))
-    return [min(w, MAX_CELL_WIDTH) for w in widths]
-
-
-# --- Modal Screens ---
-
-
 class FilterBar(Static):
     pass
 
@@ -120,9 +97,6 @@ class LogEntryItem(ListItem):
     def __init__(self, entry_index: int, *children: Static) -> None:
         super().__init__(*children)
         self.entry_index = entry_index
-
-
-# --- Main App ---
 
 
 def _text_search_expr(term: str) -> str:
@@ -144,7 +118,7 @@ def _entry_matches_search(entry: dict, term_lower: str) -> bool:
     return _check(entry)
 
 
-class JnavApp(App):
+class JnavApp(App[None]):
     CSS = """
     #filter-bar {
         height: 1;
@@ -226,29 +200,24 @@ class JnavApp(App):
 
     def __init__(
         self,
-        entries: list[dict],
+        entry_queue: Queue[ParsedEntry],
         initial_filter: str = "",
-        tail_path: str | None = None,
-        tail_offset: int = 0,
         state_file: Path | None = None,
     ) -> None:
         super().__init__()
-        processed = [preprocess_entry(e) for e in entries]
-        self.entries = [p[0] for p in processed]
-        self._json_paths: list[set[str]] = [p[1] for p in processed]
-        self._original_entries = entries
-        self.all_columns: list[str] = detect_all_columns(self.entries)
-        self.base_columns: list[str] = _default_columns(self.all_columns)
+        self._entry_queue = entry_queue
+        self._entries: list[ParsedEntry] = []
+        self.all_columns: list[str] = []
+        self._all_columns_set: set[str] = set()
+        self.base_columns: list[str] = []
         self.filters: list[Filter] = []
         self.custom_columns: list[FieldSelector] = []
-        self.visible_indices: list[int] = list(range(len(entries)))
-        self._current_detail_entry: dict | None = None
+        self.visible_indices: list[int] = []
+        self._cached_col_widths: dict[str, int] = {}
+        self._current_detail_entry: ParsedEntry | None = None
         self._current_entry_index: int = 0
         self._expanded_mode: bool = True
         self._filters_paused: bool = False
-        self._tail_path: str | None = tail_path
-        self._tail_offset: int = tail_offset
-        self._live: bool = tail_path is not None
         self._follow_next_rebuild: bool = False
         self._search_term: str = ""
         self._search_matches: list[int] = []
@@ -301,16 +270,8 @@ class JnavApp(App):
         self.call_after_refresh(self._initial_build)
 
     def _initial_build(self) -> None:
-        self._apply_all_filters()
         self._update_filter_bar()
-
-        if self.entries:
-            idx = min(self._current_entry_index, len(self.entries) - 1)
-            self._current_entry_index = idx
-            self._update_detail(self.entries[idx])
-
-        if self._tail_path:
-            self._start_tailing()
+        self._consume_entries()
 
     def on_resize(self) -> None:
         self._refresh_list_content()
@@ -389,11 +350,14 @@ class JnavApp(App):
 
     def _apply_all_filters(self) -> None:
         if self._filters_paused:
-            self.visible_indices = list(range(len(self.entries)))
+            self.visible_indices = list(range(len(self._entries)))
             self._rebuild_list()
             self._recompute_search_matches()
             return
-        matched, error = apply_combined_filters(self.filters, self.entries)
+        matched, error = apply_combined_filters(
+            filters=self.filters,
+            entries=[e.expanded for e in self._entries],
+        )
         if error:
             self.notify(f"Filter error: {error}", severity="error", timeout=4)
             return
@@ -403,7 +367,7 @@ class JnavApp(App):
 
     def _update_filter_bar(self) -> None:
         bar = self.query_one("#filter-bar", FilterBar)
-        total = len(self.entries)
+        total = len(self._entries)
         shown = len(self.visible_indices)
         n_filters = sum(1 for f in self.filters if f["enabled"])
         n_cols = sum(1 for c in self.custom_columns if c["enabled"])
@@ -428,84 +392,111 @@ class JnavApp(App):
             pos = self._search_match_pos + 1 if total else 0
             parts.append(f"/{self._search_term} ({pos}/{total})")
 
-        if self._live:
-            parts.append("LIVE")
-
         if not self.filters and not self.custom_columns and not self._search_term:
             parts.append("  /: search  f: filter  ?: help")
 
         bar.update("  \u2502  ".join(parts))
 
-    # --- Live tailing ---
+    @work(exclusive=True)
+    async def _consume_entries(self) -> None:
+        """Continuously consume entries from the queue and append to the list."""
+        while True:
+            entry = await self._entry_queue.get()
+            batch = [entry]
+            while not self._entry_queue.empty() and len(batch) < 100:
+                try:
+                    entry = self._entry_queue.get_nowait()
+                    batch.append(entry)
+                except QueueEmpty:
+                    break
+            self._append_entries(batch)
 
-    @work(thread=True, exclusive=True)
-    def _start_tailing(self) -> None:
-        path = self._tail_path
-        if not path:
-            return
-        worker = get_current_worker()
-        with open(path) as f:
-            f.seek(self._tail_offset)
-            while not worker.is_cancelled:
-                batch: list[dict] = []
-                while True:
-                    line = f.readline()
-                    if not line:
-                        break
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        obj = json.loads(line)
-                        if isinstance(obj, dict):
-                            batch.append(obj)
-                    except json.JSONDecodeError:
-                        continue
-                if batch:
-                    self.call_from_thread(self._append_entries, batch)
-                time.sleep(0.5)
-
-    def _append_entries(self, new_entries: list[dict]) -> None:
+    def _append_entries(self, new_entries: list[ParsedEntry]) -> None:
         lv = self.query_one("#log-list", ListView)
         was_at_bottom = (
             lv.index is not None
             and len(self.visible_indices) > 0
             and lv.index >= len(self.visible_indices) - 1
         )
-        was_empty = len(self.entries) == 0
+        was_empty = len(self._entries) == 0
 
-        for raw in new_entries:
-            expanded, jp = preprocess_entry(raw)
-            self.entries.append(expanded)
-            self._json_paths.append(jp)
-            self._original_entries.append(raw)
+        self._entries.extend(new_entries)
 
-        for entry in self.entries[len(self.entries) - len(new_entries) :]:
-            for key in flatten_keys(entry):
-                if key not in self.all_columns:
+        for parsed in new_entries:
+            for key in flatten_keys(parsed.expanded):
+                if key not in self._all_columns_set:
+                    self._all_columns_set.add(key)
                     self.all_columns.append(key)
 
         if was_empty:
             self.base_columns = _default_columns(self.all_columns)
 
-        if was_at_bottom:
-            self._follow_next_rebuild = True
+        # Check which new entries pass current filters
+        start = len(self._entries) - len(new_entries)
+        if (
+            self.filters
+            and any(f["enabled"] for f in self.filters)
+            and not self._filters_paused
+        ):
+            matched, error = apply_combined_filters(
+                self.filters, [e.expanded for e in self._entries[start:]]
+            )
+            if error:
+                new_visible = list(range(start, len(self._entries)))
+            else:
+                new_visible = [start + i for i in matched]
+        else:
+            new_visible = list(range(start, len(self._entries)))
 
-        self._apply_all_filters()
+        if not new_visible:
+            self._update_filter_bar()
+            return
+
+        self.visible_indices.extend(new_visible)
+
+        display_cols = self.base_columns if self._expanded_mode else self.active_columns
+        self._update_cached_col_widths(new_visible)
+        col_widths = self._get_col_widths(display_cols)
+        custom = self._custom_columns_set()
+        search = self._search_term
+        with self.batch_update():
+            for i in new_visible:
+                parsed = self._entries[i]
+                summary = _entry_summary(
+                    parsed.expanded, display_cols, col_widths, search
+                )
+                if custom:
+                    filtered = {col: get_nested(parsed.expanded, col) for col in custom}
+                    rich_tree = build_rich_tree(
+                        filtered, custom, search, parsed.expanded_paths
+                    )
+                else:
+                    rich_tree = RichTree("", hide_root=True)
+                lv.append(
+                    LogEntryItem(
+                        i,
+                        Static(summary),
+                        Static(rich_tree, classes="inline-tree"),
+                    )
+                )
+
+        if was_at_bottom:
+            # Scroll to bottom without triggering a detail tree rebuild
+            with self.prevent(ListView.Highlighted):
+                lv.index = len(self.visible_indices) - 1
+
         self._update_filter_bar()
 
-        if was_empty and self.entries:
-            self._update_detail(self.entries[0])
+        if was_empty and self._entries:
+            self._update_detail(self._entries[0])
 
-    # --- Detail panel ---
-
-    def _update_detail(self, entry: dict) -> None:
-        self._current_detail_entry = entry
+    def _update_detail(self, parsed: ParsedEntry) -> None:
+        self._current_detail_entry = parsed
         idx = self._current_entry_index
 
         ts_val = None
         for ts_key in TS_KEYS:
-            ts_val = get_nested(entry, ts_key)
+            ts_val = get_nested(parsed.expanded, ts_key)
             if ts_val:
                 break
         label = f"#{idx + 1}"
@@ -514,23 +505,36 @@ class JnavApp(App):
 
         tree = self.query_one("#detail-tree", DetailTree)
         tree.update_entry(
-            entry=entry,
+            entry=parsed.expanded,
             label=label,
-            selected=resolve_selected_paths(self._custom_columns_set(), entry),
+            selected=resolve_selected_paths(
+                self._custom_columns_set(), parsed.expanded
+            ),
             active_columns=self.active_columns,
             search_term=self._search_term,
-            json_paths=self._json_paths[idx] if idx < len(self._json_paths) else set(),
+            json_paths=parsed.expanded_paths,
         )
 
-    # --- Log list ---
+    def _update_cached_col_widths(self, indices: list[int]) -> None:
+        """Update cached column widths with new entries."""
+        for i in indices:
+            entry = self._entries[i].expanded
+            for col in self.all_columns:
+                val = get_nested(entry, col)
+                s = str(val) if val or val == 0 else ""
+                if col in TS_KEYS:
+                    s = _format_timestamp(s)
+                s = _truncate(s, MAX_CELL_WIDTH)
+                cur = self._cached_col_widths.get(col, len(col))
+                self._cached_col_widths[col] = min(max(cur, len(s)), MAX_CELL_WIDTH)
+
+    def _get_col_widths(self, columns: list[str]) -> list[int]:
+        """Get column widths from cache."""
+        return [self._cached_col_widths.get(col, len(col)) for col in columns]
 
     def _display_cols_and_widths(self) -> tuple[list[str], list[int]]:
         display_cols = self.base_columns if self._expanded_mode else self.active_columns
-        col_widths = _compute_col_widths(
-            self.entries,
-            self.visible_indices,
-            display_cols,
-        )
+        col_widths = self._get_col_widths(display_cols)
         # Expand message/msg column to fill available width
         msg_idx = None
         for i, col in enumerate(display_cols):
@@ -566,12 +570,13 @@ class JnavApp(App):
         items: list[LogEntryItem] = []
         target_list_index = 0
         for list_idx, i in enumerate(self.visible_indices):
-            entry = self.entries[i]
-            jp = self._json_paths[i]
-            summary = _entry_summary(entry, display_cols, col_widths, search)
+            parsed = self._entries[i]
+            summary = _entry_summary(parsed.expanded, display_cols, col_widths, search)
             if custom:
-                filtered = {col: get_nested(entry, col) for col in custom}
-                rich_tree = build_rich_tree(filtered, custom, search, jp)
+                filtered = {col: get_nested(parsed.expanded, col) for col in custom}
+                rich_tree = build_rich_tree(
+                    filtered, custom, search, parsed.expanded_paths
+                )
             else:
                 rich_tree = RichTree("", hide_root=True)
             items.append(
@@ -608,15 +613,18 @@ class JnavApp(App):
         search = self._search_term
 
         for item in lv.query(LogEntryItem):
-            entry = self.entries[item.entry_index]
-            jp = self._json_paths[item.entry_index]
+            parsed = self._entries[item.entry_index]
             children = list(item.query(Static))
             if len(children) >= 2:
-                summary = _entry_summary(entry, display_cols, col_widths, search)
+                summary = _entry_summary(
+                    parsed.expanded, display_cols, col_widths, search
+                )
                 children[0].update(summary)
                 if custom:
-                    filtered = {col: get_nested(entry, col) for col in custom}
-                    children[1].update(build_rich_tree(filtered, custom, search, jp))
+                    filtered = {col: get_nested(parsed.expanded, col) for col in custom}
+                    children[1].update(
+                        build_rich_tree(filtered, custom, search, parsed.expanded_paths)
+                    )
                 else:
                     children[1].update(RichTree("", hide_root=True))
 
@@ -678,7 +686,7 @@ class JnavApp(App):
         self._search_matches = [
             list_idx
             for list_idx, entry_idx in enumerate(self.visible_indices)
-            if _entry_matches_search(self.entries[entry_idx], term_lower)
+            if _entry_matches_search(self._entries[entry_idx].expanded, term_lower)
         ]
         self._search_match_pos = -1
 
@@ -735,8 +743,8 @@ class JnavApp(App):
             for list_idx, vis_idx in enumerate(self.visible_indices):
                 if list_idx >= hi:
                     break
-                entry = self.entries[vis_idx]
-                data = {col: get_nested(entry, col) for col in custom}
+                parsed = self._entries[vis_idx]
+                data = {col: get_nested(parsed.expanded, col) for col in custom}
                 delta += count_tree_nodes(data)
 
         # Toggle mode
@@ -797,7 +805,7 @@ class JnavApp(App):
 
     def action_copy_entry(self) -> None:
         if self._current_detail_entry:
-            original = self._original_entries[self._current_entry_index]
+            original = self._entries[self._current_entry_index].raw
             text = json.dumps(original, indent=2, default=str)
             self.copy_to_clipboard(text)
             self.notify("Entry copied to clipboard", timeout=2)
@@ -870,7 +878,7 @@ class JnavApp(App):
     def on_log_highlighted(self, event: ListView.Highlighted) -> None:
         if event.item and isinstance(event.item, LogEntryItem):
             self._current_entry_index = event.item.entry_index
-            self._update_detail(self.entries[self._current_entry_index])
+            self._update_detail(self._entries[self._current_entry_index])
 
     @on(ListView.Selected, "#log-list")
     def on_log_selected(self, event: ListView.Selected) -> None:

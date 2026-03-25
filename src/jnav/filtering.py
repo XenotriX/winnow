@@ -1,14 +1,27 @@
+import functools
 import json
 import re
+from typing import Literal, TypedDict
 import jq
 from collections import OrderedDict
+
+class Filter(TypedDict):
+    expr: str
+    enabled: bool
+    combine: Literal["and", "or"]
+
+
+@functools.lru_cache(maxsize=32)
+def _compile_jq(expression: str):
+    return jq.compile(expression)
+
 
 def apply_jq_filter(
     expression: str,
     entries: list[dict],
 ) -> tuple[list[int], str | None]:
     try:
-        prog = jq.compile(expression)
+        prog = _compile_jq(expression)
     except ValueError as e:
         return [], str(e)
     matched = []
@@ -23,7 +36,7 @@ def apply_jq_filter(
 
 
 def apply_combined_filters(
-    filters: list[dict],
+    filters: list[Filter],
     entries: list[dict],
 ) -> tuple[list[int], str | None]:
     """Apply all enabled filters (AND group unioned with OR group)."""

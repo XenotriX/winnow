@@ -9,14 +9,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from jnav.filtering import check_filter_warning
+from jnav.filtering import Filter, check_filter_warning
 from jnav.manager_screen_common import list_option_prompt
-
-
-class Filter(TypedDict):
-    expr: str
-    enabled: bool
-    combine: Literal["and", "or"]
 
 
 class FilterManagerScreen(ModalScreen[bool]):
