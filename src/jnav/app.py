@@ -23,8 +23,7 @@ from jnav.search_input_screen import SearchInputScreen
 from jnav.store import IndexedEntry
 
 from .detail_tree import DetailTree
-from .filtering import get_nested, resolve_selected_paths, text_search_expr
-from .parsing import ParsedEntry
+from .filtering import get_nested, text_search_expr
 from .tree_rendering import build_rich_tree, count_tree_nodes, highlight_text
 
 logger = logging.getLogger(__name__)
@@ -188,7 +187,6 @@ class JnavApp(App[None]):
         self._fields: FieldManager = fields
         self._search: SearchEngine = search
         self._cached_col_widths: dict[str, int] = {}
-        self._current_detail_entry: ParsedEntry | None = None
         self._current_entry_index: int = 0
         self._expanded_mode: bool = True
         self._follow_next_rebuild: bool = False
@@ -206,7 +204,13 @@ class JnavApp(App[None]):
                 Static("", id="log-header"),
                 ListView(id="log-list"),
             ),
-            DetailTree("entry", id="detail-tree"),
+            DetailTree(
+                "entry",
+                fields=self._fields,
+                filters=self._filter_provider,
+                search=self._search,
+                id="detail-tree",
+            ),
             id="content-area",
         )
         yield Footer()
@@ -284,14 +288,10 @@ class JnavApp(App[None]):
     async def _on_search_changed(self, _: None) -> None:
         self._search_pos = -1
         self._refresh_list_content()
-        if self._current_detail_entry:
-            self._update_detail(self._current_detail_entry)
         self._update_filter_bar()
 
     async def _on_fields_changed(self, _: None) -> None:
         self._refresh_list_content()
-        if self._current_detail_entry:
-            self._update_detail(self._current_detail_entry)
         self._update_filter_bar()
 
     def _update_filter_bar(self) -> None:
@@ -388,32 +388,9 @@ class JnavApp(App[None]):
         self._update_filter_bar()
 
         if was_empty and new_visible:
-            self._update_detail(self._model.get(new_visible[0]))
-
-    def _update_detail(self, parsed: ParsedEntry) -> None:
-        self._current_detail_entry = parsed
-        idx = self._current_entry_index
-
-        ts_val = None
-        for ts_key in TS_KEYS:
-            ts_val = get_nested(parsed.expanded, ts_key)
-            if ts_val:
-                break
-        label = f"#{idx + 1}"
-        if ts_val:
-            label += f" ({_format_timestamp(str(ts_val))})"
-
-        tree = self.query_one("#detail-tree", DetailTree)
-        tree.update_entry(
-            entry=parsed.expanded,
-            label=label,
-            selected=resolve_selected_paths(
-                self._fields.custom_fields_set, parsed.expanded
-            ),
-            active_columns=self._fields.active_fields,
-            search_term=self._search.term,
-            json_paths=parsed.expanded_paths,
-        )
+            self.query_one("#detail-tree", DetailTree).show_entry(
+                self._model.get(new_visible[0]), new_visible[0]
+            )
 
     def _update_cached_col_widths(self, indices: list[int]) -> None:
         """Update cached column widths with new entries."""
@@ -542,12 +519,7 @@ class JnavApp(App[None]):
         self.query_one("#log-list", ListView).focus()
 
     def action_open_filters(self) -> None:
-        def on_dismiss(result: object) -> None:
-            del result  # unused
-            if self._current_detail_entry:
-                self._update_detail(self._current_detail_entry)
-
-        self.push_screen(FilterManagerScreen(self._filter_provider), on_dismiss)
+        self.push_screen(FilterManagerScreen(self._filter_provider))
 
     def action_open_columns(self) -> None:
         self.push_screen(FieldManagerScreen(self._fields))
@@ -667,8 +639,6 @@ class JnavApp(App[None]):
             self._focus_main()
         else:
             detail.add_class("visible")
-            if self._current_detail_entry:
-                self._update_detail(self._current_detail_entry)
 
     def action_inspect(self) -> None:
         """Open detail panel and focus it (Enter key)."""
@@ -678,22 +648,18 @@ class JnavApp(App[None]):
         detail = self.query_one("#detail-tree", DetailTree)
         if not detail.has_class("visible"):
             detail.add_class("visible")
-        if self._current_detail_entry:
-            self._update_detail(self._current_detail_entry)
         detail.focus()
 
     async def action_reset(self) -> None:
         await self._fields.clear_custom_fields()
         await self._search.clear()
         await self._filter_provider.clear_filters()
-        if self._current_detail_entry:
-            self._update_detail(self._current_detail_entry)
         self.notify("Filters and fields cleared", timeout=2)
 
     def action_copy_entry(self) -> None:
-        if self._current_detail_entry:
-            original = self._model.get(self._current_entry_index).raw
-            text = json.dumps(original, indent=2, default=str)
+        tree = self.query_one("#detail-tree", DetailTree)
+        if tree.entry:
+            text = json.dumps(tree.entry.raw, indent=2, default=str)
             self.copy_to_clipboard(text)
             self.notify("Entry copied to clipboard", timeout=2)
 
@@ -759,26 +725,12 @@ class JnavApp(App[None]):
     def on_log_highlighted(self, event: ListView.Highlighted) -> None:
         if event.item and isinstance(event.item, LogEntryItem):
             self._current_entry_index = event.item.entry_index
-            self._update_detail(self._model.get(self._current_entry_index))
+            self.query_one("#detail-tree", DetailTree).show_entry(
+                self._model.get(self._current_entry_index), self._current_entry_index
+            )
 
     @on(ListView.Selected, "#log-list")
     def on_log_selected(self, event: ListView.Selected) -> None:
         del event  # unused
         self.action_inspect()
 
-    @on(DetailTree.FilterRequested)
-    async def on_filter_requested(self, event: DetailTree.FilterRequested) -> None:
-        await self._filter_provider.add_filter(
-            event.expr,
-            combine=event.combine,
-        )
-
-    @on(DetailTree.ColumnRequested)
-    async def on_column_requested(self, event: DetailTree.ColumnRequested) -> None:
-        await self._fields.add_field(event.path)
-
-    @on(DetailTree.SelectedOnlyToggled)
-    def on_selected_only_toggled(self, event: DetailTree.SelectedOnlyToggled) -> None:
-        del event  # unused
-        if self._current_detail_entry is not None:
-            self._update_detail(self._current_detail_entry)

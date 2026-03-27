@@ -8,45 +8,38 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from textual.binding import Binding, BindingsMap
 from textual.events import Key
-from textual.message import Message
 from textual.widgets import Tree
 
-from .filtering import get_nested, jq_value_literal
+from .field_manager import FieldManager
+from .filter_provider import FilterProvider
+from .filtering import get_nested, jq_value_literal, resolve_selected_paths
+from .parsing import ParsedEntry
+from .search_engine import SearchEngine
 from .tree_rendering import TreeNodeData, build_tree
 
 if TYPE_CHECKING:
     from textual import getters
     from textual.app import App
 
+TS_KEYS = {"timestamp", "ts", "time"}
+
+
+def _format_timestamp(value: str) -> str:
+    from datetime import datetime
+
+    try:
+        dt = datetime.fromisoformat(value)
+        return dt.strftime("%H:%M:%S") + f".{dt.microsecond // 1000:03d}"
+    except ValueError, TypeError:
+        return str(value)
+
 
 class DetailTree(Tree[TreeNodeData]):
-    """Interactive tree view for inspecting a single log entry."""
 
     if TYPE_CHECKING:
         app = getters.app(App[None])
 
     _saved_bindings: BindingsMap | None = None
-
-    class FilterRequested(Message):
-        expr: str
-        combine: Literal["and", "or"]
-
-        def __init__(
-            self,
-            expr: str,
-            combine: Literal["and", "or"] = "and",
-        ) -> None:
-            super().__init__()
-            self.expr = expr
-            self.combine = combine
-
-    class ColumnRequested(Message):
-        def __init__(self, path: str) -> None:
-            super().__init__()
-            self.path = path
-
-    class SelectedOnlyToggled(Message):
-        pass
 
     BINDINGS = [
         Binding("j", "cursor_down", show=False),
@@ -70,6 +63,75 @@ class DetailTree(Tree[TreeNodeData]):
 
     show_selected_only: bool = False
     _leader_pending: bool = False
+    _entry: ParsedEntry | None = None
+    _entry_index: int = 0
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        fields: FieldManager,
+        filters: FilterProvider,
+        search: SearchEngine,
+        id: str | None = None,
+    ) -> None:
+        super().__init__(label, id=id)
+        self._fields = fields
+        self._filters = filters
+        self._search = search
+
+    async def on_mount(self) -> None:
+        await self._fields.on_change.subscribe_async(self._rerender)
+        await self._search.on_change.subscribe_async(self._rerender)
+
+    async def _rerender(self, _: None) -> None:
+        self._render()
+
+    @property
+    def entry(self) -> ParsedEntry | None:
+        return self._entry
+
+    def show_entry(self, parsed: ParsedEntry, index: int) -> None:
+        self._entry = parsed
+        self._entry_index = index
+        self._render()
+
+    def _render(self) -> None:
+        if self._entry is None:
+            return
+        entry = self._entry.expanded
+        selected = resolve_selected_paths(self._fields.custom_fields_set, entry)
+
+        ts_val = None
+        for ts_key in TS_KEYS:
+            ts_val = get_nested(entry, ts_key)
+            if ts_val:
+                break
+        label = f"#{self._entry_index + 1}"
+        if ts_val:
+            label += f" ({_format_timestamp(str(ts_val))})"
+
+        self.clear()
+        if self.show_selected_only:
+            self.root.set_label(f"{label} (selected)")
+            filtered = {col: get_nested(entry, col) for col in self._fields.active_fields}
+            build_tree(
+                self.root,
+                filtered,
+                selected=selected,
+                search_term=self._search.term,
+                json_paths=self._entry.expanded_paths,
+            )
+        else:
+            self.root.set_label(label)
+            build_tree(
+                self.root,
+                entry,
+                selected=selected,
+                search_term=self._search.term,
+                json_paths=self._entry.expanded_paths,
+            )
+        self.root.expand_all()
 
     def action_leader_filter_and(self) -> None:
         pass
@@ -86,20 +148,20 @@ class DetailTree(Tree[TreeNodeData]):
     def action_leader_cancel(self) -> None:
         pass
 
-    def on_key(self, event: Key) -> None:
+    async def on_key(self, event: Key) -> None:
         if self._leader_pending:
             self._leader_pending = False
             event.prevent_default()
             event.stop()
             key = event.key
             if key == "f":
-                self._do_filter("and")
+                await self._do_filter("and")
             elif key == "o":
-                self._do_filter("or")
+                await self._do_filter("or")
             elif key == "n":
-                self._do_presence_filter("and")
+                await self._do_presence_filter("and")
             elif key == "N":
-                self._do_presence_filter("or")
+                await self._do_presence_filter("or")
             self._restore_bindings()
             return
         if event.key == "f":
@@ -121,9 +183,9 @@ class DetailTree(Tree[TreeNodeData]):
 
     def action_toggle_filter_tree(self) -> None:
         self.show_selected_only = not self.show_selected_only
-        self.post_message(self.SelectedOnlyToggled())
+        self._render()
 
-    def _do_filter(self, combine: str) -> None:
+    async def _do_filter(self, combine: Literal["and", "or"]) -> None:
         node = self.cursor_node
         if node is None or node.data is None:
             return
@@ -132,52 +194,20 @@ class DetailTree(Tree[TreeNodeData]):
         if isinstance(value, (dict, list)):
             return
         expr = f".{path} == {jq_value_literal(value)}"
-        self.post_message(self.FilterRequested(expr, combine))
+        await self._filters.add_filter(expr, combine=combine)
 
-    def _do_presence_filter(self, combine: str) -> None:
+    async def _do_presence_filter(self, combine: Literal["and", "or"]) -> None:
         node = self.cursor_node
         if node is None or node.data is None:
             return
         path = node.data["path"]
-        self.post_message(self.FilterRequested(f".{path} != null", combine))
+        await self._filters.add_filter(f".{path} != null", combine=combine)
 
-    def action_add_select(self) -> None:
+    async def action_add_select(self) -> None:
         node = self.cursor_node
         if node is None or node.data is None:
             return
-        self.post_message(self.ColumnRequested(node.data["path"]))
-
-    def update_entry(
-        self,
-        entry: dict[str, Any],
-        label: str,
-        selected: set[str],
-        active_columns: list[str],
-        search_term: str = "",
-        json_paths: set[str] | None = None,
-    ) -> None:
-        """Populate the tree with an entry's data."""
-        self.clear()
-        if self.show_selected_only:
-            self.root.set_label(f"{label} (selected)")
-            filtered = {col: get_nested(entry, col) for col in active_columns}
-            build_tree(
-                self.root,
-                filtered,
-                selected=selected,
-                search_term=search_term,
-                json_paths=json_paths,
-            )
-        else:
-            self.root.set_label(label)
-            build_tree(
-                self.root,
-                entry,
-                selected=selected,
-                search_term=search_term,
-                json_paths=json_paths,
-            )
-        self.root.expand_all()
+        await self._fields.add_field(node.data["path"])
 
     def action_view_value(self) -> None:
         node = self.cursor_node
