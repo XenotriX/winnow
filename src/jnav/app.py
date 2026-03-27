@@ -12,7 +12,8 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, ListItem, ListView, Static
 
-from jnav.column_manager_screen import ColumnManagerScreen, FieldSelector
+from jnav.field_manager import FieldManager
+from jnav.field_manager_screen import FieldManagerScreen
 from jnav.filter_manager_screen import FilterManagerScreen
 from jnav.filter_provider import FilterProvider
 from jnav.help_screen import HelpScreen
@@ -22,13 +23,12 @@ from jnav.search_input_screen import SearchInputScreen
 from jnav.store import IndexedEntry
 
 from .detail_tree import DetailTree
-from .filtering import flatten_keys, get_nested, resolve_selected_paths, text_search_expr
+from .filtering import get_nested, resolve_selected_paths, text_search_expr
 from .parsing import ParsedEntry
 from .tree_rendering import build_rich_tree, count_tree_nodes, highlight_text
 
 logger = logging.getLogger(__name__)
 
-PRIORITY_KEYS = ("timestamp", "ts", "time", "level", "severity", "message", "msg")
 MAX_CELL_WIDTH = 50
 
 LEVEL_COLORS = {
@@ -51,10 +51,6 @@ def _format_timestamp(value: str) -> str:
         return dt.strftime("%H:%M:%S") + f".{dt.microsecond // 1000:03d}"
     except ValueError, TypeError:
         return str(value)
-
-
-def _default_columns(all_columns: list[str]) -> list[str]:
-    return [k for k in PRIORITY_KEYS if k in all_columns]
 
 
 def _truncate(value: object, width: int = MAX_CELL_WIDTH) -> str:
@@ -182,17 +178,15 @@ class JnavApp(App[None]):
         self,
         model: LogModel,
         filter_provider: FilterProvider,
+        fields: FieldManager,
         search: SearchEngine,
         state_file: Path | None = None,
     ) -> None:
         super().__init__()
         self._model = model
-        self.all_columns: list[str] = []
-        self._all_columns_set: set[str] = set()
-        self.base_columns: list[str] = []
         self._filter_provider: FilterProvider = filter_provider
+        self._fields: FieldManager = fields
         self._search: SearchEngine = search
-        self.custom_columns: list[FieldSelector] = []
         self._cached_col_widths: dict[str, int] = {}
         self._current_detail_entry: ParsedEntry | None = None
         self._current_entry_index: int = 0
@@ -202,15 +196,6 @@ class JnavApp(App[None]):
         self._state_file: Path | None = state_file
         self._detail_visible_on_load: bool = False
         self._show_selected_only_on_load: bool = False
-
-    @property
-    def active_columns(self) -> list[str]:
-        return self.base_columns + [
-            c["path"] for c in self.custom_columns if c["enabled"]
-        ]
-
-    def _custom_columns_set(self) -> set[str]:
-        return {c["path"] for c in self.custom_columns if c["enabled"]}
 
     @override
     def compose(self) -> ComposeResult:
@@ -232,6 +217,7 @@ class JnavApp(App[None]):
         await self._model.on_append.subscribe_async(self._append_entries)
         await self._model.on_rebuild.subscribe_async(self._on_rebuild)
         await self._search.on_change.subscribe_async(self._on_search_changed)
+        await self._fields.on_change.subscribe_async(self._on_fields_changed)
 
         lv = self.query_one("#log-list", ListView)
         lv.focus()
@@ -249,7 +235,7 @@ class JnavApp(App[None]):
         self.call_after_refresh(self._initial_build)
 
     async def _initial_build(self) -> None:
-        self._discover_columns(self._model.all())
+        self._fields.discover(self._model.all())
         await self._on_rebuild(None)
 
     def on_resize(self) -> None:
@@ -263,7 +249,7 @@ class JnavApp(App[None]):
         except json.JSONDecodeError, OSError:
             return
         await self._filter_provider.set_filters(state.get("filters", []))
-        self.custom_columns = state.get("custom_columns", [])
+        await self._fields.set_custom_fields(state.get("custom_fields", []))
         self._expanded_mode = state.get("expanded_mode", False)
         await self._model.set_filtering_enabled(not state.get("filters_paused", False))
         await self._search.set_term(state.get("search_term", ""))
@@ -277,7 +263,7 @@ class JnavApp(App[None]):
         detail = self.query_one("#detail-tree", DetailTree)
         state = {
             "filters": self._filter_provider.get_filters(),
-            "custom_columns": self.custom_columns,
+            "custom_fields": self._fields.custom_fields,
             "expanded_mode": self._expanded_mode,
             "filters_paused": self._model.filtering_enabled is False,
             "search_term": self._search.term,
@@ -302,29 +288,18 @@ class JnavApp(App[None]):
             self._update_detail(self._current_detail_entry)
         self._update_filter_bar()
 
-    def add_column(self, path: str) -> None:
-        """Add or toggle a custom column. Does not change focus."""
-        for c in self.custom_columns:
-            if c["path"] == path:
-                c["enabled"] = not c["enabled"]
-                self._refresh_list_content()
-                if self._current_detail_entry:
-                    self._update_detail(self._current_detail_entry)
-                self._update_filter_bar()
-                return
-        if path not in self.base_columns:
-            self.custom_columns.append({"path": path, "enabled": True})
-            self._refresh_list_content()
-            if self._current_detail_entry:
-                self._update_detail(self._current_detail_entry)
-            self._update_filter_bar()
+    async def _on_fields_changed(self, _: None) -> None:
+        self._refresh_list_content()
+        if self._current_detail_entry:
+            self._update_detail(self._current_detail_entry)
+        self._update_filter_bar()
 
     def _update_filter_bar(self) -> None:
         bar = self.query_one("#filter-bar", FilterBar)
         total = self._model.count()
         shown = len(self._model.visible_indices)
         n_filters = sum(1 for f in self._filter_provider.get_filters() if f["enabled"])
-        n_cols = sum(1 for c in self.custom_columns if c["enabled"])
+        n_cols = sum(1 for c in self._fields.custom_fields if c["enabled"])
 
         n_or = sum(
             1
@@ -352,22 +327,12 @@ class JnavApp(App[None]):
 
         if (
             not self._filter_provider.get_filters()
-            and not self.custom_columns
+            and not self._fields.custom_fields
             and not self._search.term
         ):
             parts.append("  /: search  f: filter  ?: help")
 
         bar.update("  \u2502  ".join(parts))
-
-    def _discover_columns(self, entries: list[IndexedEntry]) -> None:
-        was_empty = not self.all_columns
-        for ie in entries:
-            for key in flatten_keys(ie.entry.expanded):
-                if key not in self._all_columns_set:
-                    self._all_columns_set.add(key)
-                    self.all_columns.append(key)
-        if was_empty and self.all_columns:
-            self.base_columns = _default_columns(self.all_columns)
 
     async def _append_entries(self, new_entries: list[IndexedEntry]) -> None:
         lv = self.query_one("#log-list", ListView)
@@ -378,7 +343,7 @@ class JnavApp(App[None]):
         )
         was_empty = len(lv) == 0
 
-        self._discover_columns(new_entries)
+        self._fields.discover(new_entries)
 
         new_visible = [ie.index for ie in new_entries]
 
@@ -386,10 +351,14 @@ class JnavApp(App[None]):
             self._update_filter_bar()
             return
 
-        display_cols = self.base_columns if self._expanded_mode else self.active_columns
+        display_cols = (
+            self._fields.base_fields
+            if self._expanded_mode
+            else self._fields.active_fields
+        )
         self._update_cached_col_widths(new_visible)
         col_widths = self._get_col_widths(display_cols)
-        custom = self._custom_columns_set()
+        custom = self._fields.custom_fields_set
         search = self._search.term
         with self.batch_update():
             for i in new_visible:
@@ -439,9 +408,9 @@ class JnavApp(App[None]):
             entry=parsed.expanded,
             label=label,
             selected=resolve_selected_paths(
-                self._custom_columns_set(), parsed.expanded
+                self._fields.custom_fields_set, parsed.expanded
             ),
-            active_columns=self.active_columns,
+            active_columns=self._fields.active_fields,
             search_term=self._search.term,
             json_paths=parsed.expanded_paths,
         )
@@ -450,7 +419,7 @@ class JnavApp(App[None]):
         """Update cached column widths with new entries."""
         for i in indices:
             entry = self._model.get(i).expanded
-            for col in self.all_columns:
+            for col in self._fields.all_fields:
                 val = get_nested(entry, col)
                 s = str(val) if val or val == 0 else ""
                 if col in TS_KEYS:
@@ -464,7 +433,11 @@ class JnavApp(App[None]):
         return [self._cached_col_widths.get(col, len(col)) for col in columns]
 
     def _display_cols_and_widths(self) -> tuple[list[str], list[int]]:
-        display_cols = self.base_columns if self._expanded_mode else self.active_columns
+        display_cols = (
+            self._fields.base_fields
+            if self._expanded_mode
+            else self._fields.active_fields
+        )
         col_widths = self._get_col_widths(display_cols)
         # Expand message/msg column to fill available width
         msg_idx = None
@@ -496,7 +469,7 @@ class JnavApp(App[None]):
 
         lv = self.query_one("#log-list", ListView)
 
-        custom = self._custom_columns_set()
+        custom = self._fields.custom_fields_set
         search = self._search.term
         items: list[LogEntryItem] = []
         target_list_index = 0
@@ -540,7 +513,7 @@ class JnavApp(App[None]):
         self._update_header(display_cols, col_widths)
 
         lv = self.query_one("#log-list", ListView)
-        custom = self._custom_columns_set()
+        custom = self._fields.custom_fields_set
         search = self._search.term
 
         for item in lv.query(LogEntryItem):
@@ -558,8 +531,6 @@ class JnavApp(App[None]):
                     )
                 else:
                     children[1].update(RichTree("", hide_root=True))
-
-    # --- Actions ---
 
     @override
     async def action_quit(self) -> None:
@@ -579,17 +550,7 @@ class JnavApp(App[None]):
         self.push_screen(FilterManagerScreen(self._filter_provider), on_dismiss)
 
     def action_open_columns(self) -> None:
-        async def on_dismiss(result: object) -> None:
-            del result  # unused
-            await self._rebuild_list()
-            self._update_filter_bar()
-            if self._current_detail_entry:
-                self._update_detail(self._current_detail_entry)
-
-        self.push_screen(
-            ColumnManagerScreen(self.custom_columns, self.all_columns),
-            on_dismiss,
-        )
+        self.push_screen(FieldManagerScreen(self._fields))
 
     def action_start_search(self) -> None:
         async def on_dismiss(term: str | None) -> None:
@@ -667,7 +628,7 @@ class JnavApp(App[None]):
         hi = lv.index or 0
 
         # Compute scroll delta: sum of tree line counts for items above highlighted
-        custom = self._custom_columns_set()
+        custom = self._fields.custom_fields_set
         delta = 0
         if custom:
             for list_idx, vis_idx in enumerate(self._model.visible_indices):
@@ -722,7 +683,7 @@ class JnavApp(App[None]):
         detail.focus()
 
     async def action_reset(self) -> None:
-        self.custom_columns.clear()
+        await self._fields.clear_custom_fields()
         await self._search.clear()
         await self._filter_provider.clear_filters()
         if self._current_detail_entry:
@@ -813,8 +774,8 @@ class JnavApp(App[None]):
         )
 
     @on(DetailTree.ColumnRequested)
-    def on_column_requested(self, event: DetailTree.ColumnRequested) -> None:
-        self.add_column(event.path)
+    async def on_column_requested(self, event: DetailTree.ColumnRequested) -> None:
+        await self._fields.add_field(event.path)
 
     @on(DetailTree.SelectedOnlyToggled)
     def on_selected_only_toggled(self, event: DetailTree.SelectedOnlyToggled) -> None:

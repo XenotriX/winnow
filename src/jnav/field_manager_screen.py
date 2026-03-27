@@ -1,4 +1,4 @@
-from typing import TypedDict, override
+from typing import override
 
 from rich.text import Text
 from textual import on
@@ -9,21 +9,16 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
+from jnav.field_manager import FieldManager
 from jnav.manager_screen_common import list_option_prompt
 
 
-class FieldSelector(TypedDict):
-    path: str
-    enabled: bool
-
-
-class ColumnManagerScreen(ModalScreen[bool]):
-    custom_columns: list[FieldSelector]
+class FieldManagerScreen(ModalScreen[bool]):
     DEFAULT_CSS = """
-    ColumnManagerScreen {
+    FieldManagerScreen {
         align: center middle;
     }
-    #column-modal {
+    #field-modal {
         width: 60;
         max-width: 90%;
         height: auto;
@@ -32,22 +27,22 @@ class ColumnManagerScreen(ModalScreen[bool]):
         background: $surface;
         padding: 1 2;
     }
-    #column-modal-title {
+    #field-modal-title {
         text-style: bold;
         padding: 0 0 1 0;
     }
-    #column-list {
+    #field-list {
         height: auto;
         max-height: 14;
         border: none;
     }
-    #column-add-input {
+    #field-add-input {
         margin: 1 0 0 0;
     }
-    #column-add-input.hidden {
+    #field-add-input.hidden {
         display: none;
     }
-    #column-hints {
+    #field-hints {
         color: $text-muted;
         margin: 1 0 0 0;
     }
@@ -61,108 +56,103 @@ class ColumnManagerScreen(ModalScreen[bool]):
         Binding("space", "toggle_item", "Toggle", show=False),
     ]
 
-    def __init__(
-        self, custom_columns: list[FieldSelector], all_columns: list[str]
-    ) -> None:
+    def __init__(self, field_manager: FieldManager) -> None:
         super().__init__()
-        self.custom_columns = custom_columns
-        self.all_columns = all_columns
+        self._fm = field_manager
         self._editing_idx: int | None = None
 
     @override
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static("Fields", id="column-modal-title"),
-            OptionList(id="column-list"),
+            Static("Fields", id="field-modal-title"),
+            OptionList(id="field-list"),
             Input(
                 placeholder="field path (e.g. data.role)...",
-                id="column-add-input",
+                id="field-add-input",
                 classes="hidden",
             ),
             Static(
                 "[b]a[/b]:Add  [b]e[/b]:Edit  [b]space[/b]:Toggle  [b]d[/b]:Delete  [b]esc[/b]:Close",
-                id="column-hints",
+                id="field-hints",
             ),
-            id="column-modal",
+            id="field-modal",
         )
 
     def on_mount(self) -> None:
         self._refresh_list()
-        self.query_one("#column-list", OptionList).focus()
+        self.query_one("#field-list", OptionList).focus()
 
     def _refresh_list(self, highlight: int | None = None) -> None:
-        ol = self.query_one("#column-list", OptionList)
+        fields = self._fm.custom_fields
+        ol = self.query_one("#field-list", OptionList)
         ol.clear_options()
-        if not self.custom_columns:
+        if not fields:
             ol.add_option(
                 Option(Text(" (no fields selected)", style="dim"), disabled=True)
             )
         else:
-            for c in self.custom_columns:
-                ol.add_option(list_option_prompt(c["path"], c["enabled"]))
-        if highlight is not None and self.custom_columns:
-            ol.highlighted = min(highlight, len(self.custom_columns) - 1)
+            for f in fields:
+                ol.add_option(list_option_prompt(f["path"], f["enabled"]))
+        if highlight is not None and fields:
+            ol.highlighted = min(highlight, len(fields) - 1)
 
-    def action_toggle_item(self) -> None:
-        ol = self.query_one("#column-list", OptionList)
+    async def action_toggle_item(self) -> None:
+        ol = self.query_one("#field-list", OptionList)
         idx = ol.highlighted
-        if idx is not None and idx < len(self.custom_columns):
-            self.custom_columns[idx]["enabled"] = not self.custom_columns[idx][
-                "enabled"
-            ]
+        if idx is not None and idx < len(self._fm.custom_fields):
+            await self._fm.toggle_field(idx)
             self._refresh_list(idx)
 
-    def action_delete(self) -> None:
-        ol = self.query_one("#column-list", OptionList)
+    async def action_delete(self) -> None:
+        ol = self.query_one("#field-list", OptionList)
         idx = ol.highlighted
-        if idx is not None and idx < len(self.custom_columns):
-            self.custom_columns.pop(idx)
+        if idx is not None and idx < len(self._fm.custom_fields):
+            await self._fm.remove_field(idx)
             self._refresh_list(idx)
 
     def action_add_mode(self) -> None:
         self._editing_idx = None
-        inp = self.query_one("#column-add-input", Input)
+        inp = self.query_one("#field-add-input", Input)
         inp.remove_class("hidden")
         inp.value = ""
         inp.focus()
 
     def action_edit_mode(self) -> None:
-        ol = self.query_one("#column-list", OptionList)
+        ol = self.query_one("#field-list", OptionList)
         idx = ol.highlighted
-        if idx is None or idx >= len(self.custom_columns):
+        fields = self._fm.custom_fields
+        if idx is None or idx >= len(fields):
             return
         self._editing_idx = idx
-        inp = self.query_one("#column-add-input", Input)
+        inp = self.query_one("#field-add-input", Input)
         inp.remove_class("hidden")
-        inp.value = self.custom_columns[idx]["path"]
+        inp.value = fields[idx]["path"]
         inp.focus()
 
-    @on(Input.Submitted, "#column-add-input")
-    def on_add_submitted(self, event: Input.Submitted) -> None:
+    @on(Input.Submitted, "#field-add-input")
+    async def on_add_submitted(self, event: Input.Submitted) -> None:
         raw = event.value.strip().lstrip(".")
         if raw:
             if self._editing_idx is not None:
-                self.custom_columns[self._editing_idx]["path"] = raw
+                await self._fm.edit_field(self._editing_idx, raw)
                 highlight = self._editing_idx
             else:
-                existing = {c["path"] for c in self.custom_columns}
-                if raw not in existing:
-                    self.custom_columns.append({"path": raw, "enabled": True})
-                highlight = len(self.custom_columns) - 1
+                await self._fm.add_field(raw)
+                highlight = len(self._fm.custom_fields) - 1
         else:
             highlight = self._editing_idx
         self._editing_idx = None
         event.input.value = ""
-        self.query_one("#column-add-input").add_class("hidden")
+        self.query_one("#field-add-input").add_class("hidden")
         self._refresh_list(highlight)
-        self.query_one("#column-list", OptionList).focus()
+        self.query_one("#field-list", OptionList).focus()
 
     def action_maybe_close(self) -> None:
-        inp = self.query_one("#column-add-input", Input)
+        inp = self.query_one("#field-add-input", Input)
         if not inp.has_class("hidden"):
             self._editing_idx = None
             inp.add_class("hidden")
             inp.value = ""
-            self.query_one("#column-list", OptionList).focus()
+            self.query_one("#field-list", OptionList).focus()
         else:
             self.dismiss(True)

@@ -1,8 +1,7 @@
 import functools
 import json
 import re
-from collections import OrderedDict
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict
 
 import jq
 
@@ -110,28 +109,6 @@ def get_nested(entry: dict[str, Any], path: str) -> object:
             else:
                 return ""
     return obj
-
-
-def flatten_keys(obj: dict[str, Any], prefix: str = "") -> list[str]:
-    keys: list[str] = []
-    for k, v in obj.items():
-        full = f"{prefix}{k}"
-        if isinstance(v, dict):
-            v = cast(dict[str, Any], v)
-            for sub_k in v:
-                keys.append(f"{full}.{sub_k}")
-        else:
-            keys.append(full)
-    return keys
-
-
-def detect_all_columns(entries: list[dict]) -> list[str]:
-    seen: OrderedDict[str, None] = OrderedDict()
-    for entry in entries:
-        for key in flatten_keys(entry):
-            if key not in seen:
-                seen[key] = None
-    return list(seen)
 
 
 def jq_value_literal(value: object) -> str:

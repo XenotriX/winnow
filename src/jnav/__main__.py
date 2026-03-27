@@ -7,6 +7,7 @@ from pathlib import Path
 import aioreactive as rx
 import click
 
+from jnav.field_manager import FieldManager
 from jnav.filter_provider import FilterProvider
 from jnav.log_model import LogModel
 from jnav.search_engine import SearchEngine
@@ -44,6 +45,7 @@ async def _run(file: str | None) -> None:
         raise SystemExit(1)
 
     filter_provider = FilterProvider()
+    fields = FieldManager()
     store = Store()
     model = LogModel(
         store=store,
@@ -74,6 +76,7 @@ async def _run(file: str | None) -> None:
     app = JnavApp(
         model=model,
         filter_provider=filter_provider,
+        fields=fields,
         search=search,
         state_file=state_file,
     )
