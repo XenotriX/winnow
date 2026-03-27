@@ -9,6 +9,7 @@ import click
 
 from jnav.filter_provider import FilterProvider
 from jnav.log_model import LogModel
+from jnav.search_engine import SearchEngine
 from jnav.store import Store
 
 from .app import JnavApp
@@ -49,7 +50,10 @@ async def _run(file: str | None) -> None:
         filter_provider=filter_provider,
     )
 
+    search = SearchEngine(model)
+
     await model.start()
+    await search.start()
 
     entry_stream = rx.from_async_iterable(
         buffer_time_or_count(
@@ -70,6 +74,7 @@ async def _run(file: str | None) -> None:
     app = JnavApp(
         model=model,
         filter_provider=filter_provider,
+        search=search,
         state_file=state_file,
     )
     app.title = "jnav"

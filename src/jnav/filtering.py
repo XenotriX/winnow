@@ -59,6 +59,11 @@ def apply_combined_filters(
     return apply_jq_filter(combined, entries)
 
 
+def text_search_expr(term: str) -> str:
+    escaped = term.lower().replace("\\", "\\\\").replace('"', '\\"')
+    return f'[.. | strings] | any(ascii_downcase | contains("{escaped}"))'
+
+
 _ASSIGNMENT_RE = re.compile(r"(?<![=!<>])=(?!=)")
 
 

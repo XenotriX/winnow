@@ -17,11 +17,12 @@ from jnav.filter_manager_screen import FilterManagerScreen
 from jnav.filter_provider import FilterProvider
 from jnav.help_screen import HelpScreen
 from jnav.log_model import LogModel
+from jnav.search_engine import SearchEngine
 from jnav.search_input_screen import SearchInputScreen
 from jnav.store import IndexedEntry
 
 from .detail_tree import DetailTree
-from .filtering import flatten_keys, get_nested, resolve_selected_paths
+from .filtering import flatten_keys, get_nested, resolve_selected_paths, text_search_expr
 from .parsing import ParsedEntry
 from .tree_rendering import build_rich_tree, count_tree_nodes, highlight_text
 
@@ -95,25 +96,6 @@ class LogEntryItem(ListItem):
     def __init__(self, entry_index: int, *children: Static) -> None:
         super().__init__(*children)
         self.entry_index = entry_index
-
-
-def _text_search_expr(term: str) -> str:
-    """Build a jq expression for case-insensitive text search across all string fields."""
-    escaped = term.lower().replace("\\", "\\\\").replace('"', '\\"')
-    return f'[.. | strings] | any(ascii_downcase | contains("{escaped}"))'
-
-
-def _entry_matches_search(entry: dict[str, Any], term_lower: str) -> bool:
-    def _check(obj: object) -> bool:
-        if isinstance(obj, str):
-            return term_lower in obj.lower()
-        if isinstance(obj, dict):
-            return any(_check(v) for v in obj.values())
-        if isinstance(obj, list):
-            return any(_check(item) for item in obj)
-        return term_lower in str(obj).lower()
-
-    return _check(entry)
 
 
 class JnavApp(App[None]):
@@ -200,6 +182,7 @@ class JnavApp(App[None]):
         self,
         model: LogModel,
         filter_provider: FilterProvider,
+        search: SearchEngine,
         state_file: Path | None = None,
     ) -> None:
         super().__init__()
@@ -208,15 +191,14 @@ class JnavApp(App[None]):
         self._all_columns_set: set[str] = set()
         self.base_columns: list[str] = []
         self._filter_provider: FilterProvider = filter_provider
+        self._search: SearchEngine = search
         self.custom_columns: list[FieldSelector] = []
         self._cached_col_widths: dict[str, int] = {}
         self._current_detail_entry: ParsedEntry | None = None
         self._current_entry_index: int = 0
         self._expanded_mode: bool = True
         self._follow_next_rebuild: bool = False
-        self._search_term: str = ""
-        self._search_matches: list[int] = []
-        self._search_match_pos: int = -1
+        self._search_pos: int = -1
         self._state_file: Path | None = state_file
         self._detail_visible_on_load: bool = False
         self._show_selected_only_on_load: bool = False
@@ -249,6 +231,7 @@ class JnavApp(App[None]):
 
         await self._model.on_append.subscribe_async(self._append_entries)
         await self._model.on_rebuild.subscribe_async(self._on_rebuild)
+        await self._search.on_change.subscribe_async(self._on_search_changed)
 
         lv = self.query_one("#log-list", ListView)
         lv.focus()
@@ -283,7 +266,7 @@ class JnavApp(App[None]):
         self.custom_columns = state.get("custom_columns", [])
         self._expanded_mode = state.get("expanded_mode", False)
         await self._model.set_filtering_enabled(not state.get("filters_paused", False))
-        self._search_term = state.get("search_term", "")
+        await self._search.set_term(state.get("search_term", ""))
         self._current_entry_index = state.get("entry_index", 0)
         self._detail_visible_on_load = state.get("detail_visible", False)
         self._show_selected_only_on_load = state.get("show_selected_only", False)
@@ -297,7 +280,7 @@ class JnavApp(App[None]):
             "custom_columns": self.custom_columns,
             "expanded_mode": self._expanded_mode,
             "filters_paused": self._model.filtering_enabled is False,
-            "search_term": self._search_term,
+            "search_term": self._search.term,
             "entry_index": self._current_entry_index,
             "detail_visible": detail.has_class("visible"),
             "show_selected_only": detail.show_selected_only,
@@ -310,7 +293,13 @@ class JnavApp(App[None]):
 
     async def _on_rebuild(self, _: None) -> None:
         await self._rebuild_list()
-        self._recompute_search_matches()
+        self._update_filter_bar()
+
+    async def _on_search_changed(self, _: None) -> None:
+        self._search_pos = -1
+        self._refresh_list_content()
+        if self._current_detail_entry:
+            self._update_detail(self._current_detail_entry)
         self._update_filter_bar()
 
     def add_column(self, path: str) -> None:
@@ -356,15 +345,15 @@ class JnavApp(App[None]):
         if not self._expanded_mode:
             parts.append("Collapsed")
 
-        if self._search_term:
-            total = len(self._search_matches)
-            pos = self._search_match_pos + 1 if total else 0
-            parts.append(f"/{self._search_term} ({pos}/{total})")
+        if self._search.term:
+            total = len(self._search.matches)
+            pos = self._search_pos + 1 if total else 0
+            parts.append(f"/{self._search.term} ({pos}/{total})")
 
         if (
             not self._filter_provider.get_filters()
             and not self.custom_columns
-            and not self._search_term
+            and not self._search.term
         ):
             parts.append("  /: search  f: filter  ?: help")
 
@@ -401,7 +390,7 @@ class JnavApp(App[None]):
         self._update_cached_col_widths(new_visible)
         col_widths = self._get_col_widths(display_cols)
         custom = self._custom_columns_set()
-        search = self._search_term
+        search = self._search.term
         with self.batch_update():
             for i in new_visible:
                 parsed = self._model.get(i)
@@ -453,7 +442,7 @@ class JnavApp(App[None]):
                 self._custom_columns_set(), parsed.expanded
             ),
             active_columns=self.active_columns,
-            search_term=self._search_term,
+            search_term=self._search.term,
             json_paths=parsed.expanded_paths,
         )
 
@@ -508,7 +497,7 @@ class JnavApp(App[None]):
         lv = self.query_one("#log-list", ListView)
 
         custom = self._custom_columns_set()
-        search = self._search_term
+        search = self._search.term
         items: list[LogEntryItem] = []
         target_list_index = 0
         for list_idx, i in enumerate(self._model.visible_indices):
@@ -552,7 +541,7 @@ class JnavApp(App[None]):
 
         lv = self.query_one("#log-list", ListView)
         custom = self._custom_columns_set()
-        search = self._search_term
+        search = self._search.term
 
         for item in lv.query(LogEntryItem):
             parsed = self._model.get(item.entry_index)
@@ -603,58 +592,54 @@ class JnavApp(App[None]):
         )
 
     def action_start_search(self) -> None:
-        def on_dismiss(term: str | None) -> None:
-            if term:
-                self._search_term = term
-                self._recompute_search_matches()
-                self._update_filter_bar()
-                self._refresh_list_content()
-                if self._current_detail_entry:
-                    self._update_detail(self._current_detail_entry)
-                if self._search_matches:
-                    self._search_match_pos = 0
-                    lv = self.query_one("#log-list", ListView)
-                    lv.index = self._search_matches[0]
-                else:
-                    self.notify("No matches found", timeout=2)
+        async def on_dismiss(term: str | None) -> None:
+            if not term:
+                return
+            await self._search.set_term(term)
+            if self._search.matches:
+                self._search_pos = 0
+                self._jump_to_store_index(self._search.matches[0])
+            else:
+                self.notify("No matches found", timeout=2)
 
         self.push_screen(SearchInputScreen(), on_dismiss)
 
-    def _recompute_search_matches(self) -> None:
-        if not self._search_term:
-            self._search_matches = []
-            self._search_match_pos = -1
-            return
-        term_lower = self._search_term.lower()
-        self._search_matches = [
-            list_idx
-            for list_idx, entry_idx in enumerate(self._model.visible_indices)
-            if _entry_matches_search(self._model.get(entry_idx).expanded, term_lower)
-        ]
-        self._search_match_pos = -1
+    def _current_store_index(self) -> int:
+        lv = self.query_one("#log-list", ListView)
+        list_idx = lv.index or 0
+        visible = self._model.visible_indices
+        if list_idx < len(visible):
+            return visible[list_idx]
+        return 0
+
+    def _jump_to_store_index(self, store_idx: int) -> None:
+        visible = self._model.visible_indices
+        try:
+            lv = self.query_one("#log-list", ListView)
+            lv.index = visible.index(store_idx)
+        except ValueError:
+            pass
 
     def action_search_next(self) -> None:
-        if not self._search_matches:
+        if not self._search.matches:
             return
-        lv = self.query_one("#log-list", ListView)
-        current = lv.index or 0
-        for i, match_idx in enumerate(self._search_matches):
-            if match_idx > current:
-                self._search_match_pos = i
-                lv.index = match_idx
+        current = self._current_store_index()
+        for i, store_idx in enumerate(self._search.matches):
+            if store_idx > current:
+                self._search_pos = i
+                self._jump_to_store_index(store_idx)
                 self._update_filter_bar()
                 return
         self.notify("No more matches", timeout=1)
 
     def action_search_prev(self) -> None:
-        if not self._search_matches:
+        if not self._search.matches:
             return
-        lv = self.query_one("#log-list", ListView)
-        current = lv.index or 0
-        for i in range(len(self._search_matches) - 1, -1, -1):
-            if self._search_matches[i] < current:
-                self._search_match_pos = i
-                lv.index = self._search_matches[i]
+        current = self._current_store_index()
+        for i in range(len(self._search.matches) - 1, -1, -1):
+            if self._search.matches[i] < current:
+                self._search_pos = i
+                self._jump_to_store_index(self._search.matches[i])
                 self._update_filter_bar()
                 return
         self.notify("No more matches", timeout=1)
@@ -662,7 +647,7 @@ class JnavApp(App[None]):
     def action_text_filter(self) -> None:
         async def on_dismiss(term: str | None) -> None:
             if term:
-                expr = _text_search_expr(term)
+                expr = text_search_expr(term)
                 await self._filter_provider.add_filter(expr, label=f"text: {term}")
 
         self.push_screen(SearchInputScreen("Text Filter (AND)"), on_dismiss)
@@ -670,7 +655,7 @@ class JnavApp(App[None]):
     def action_text_filter_or(self) -> None:
         async def on_dismiss(term: str | None) -> None:
             if term:
-                expr = _text_search_expr(term)
+                expr = text_search_expr(term)
                 await self._filter_provider.add_filter(
                     expr, label=f"text: {term}", combine="or"
                 )
@@ -738,9 +723,7 @@ class JnavApp(App[None]):
 
     async def action_reset(self) -> None:
         self.custom_columns.clear()
-        self._search_term = ""
-        self._search_matches = []
-        self._search_match_pos = -1
+        await self._search.clear()
         await self._filter_provider.clear_filters()
         if self._current_detail_entry:
             self._update_detail(self._current_detail_entry)
@@ -804,18 +787,12 @@ class JnavApp(App[None]):
     def action_show_help(self) -> None:
         self.push_screen(HelpScreen())
 
-    def action_escape(self) -> None:
+    async def action_escape(self) -> None:
         tree = self.query_one("#detail-tree", DetailTree)
         if self.focused == tree:
             self._focus_main()
-        elif self._search_term:
-            self._search_term = ""
-            self._search_matches = []
-            self._search_match_pos = -1
-            self._update_filter_bar()
-            self._refresh_list_content()
-            if self._current_detail_entry:
-                self._update_detail(self._current_detail_entry)
+        elif self._search.active:
+            await self._search.clear()
 
     @on(ListView.Highlighted, "#log-list")
     def on_log_highlighted(self, event: ListView.Highlighted) -> None:
