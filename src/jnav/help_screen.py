@@ -52,13 +52,9 @@ class HelpScreen(ModalScreen[bool]):
         max-width: 90%;
         height: auto;
         max-height: 80%;
-        border: solid $surface-lighten-2;
+        border: round $surface-lighten-2;
         background: $surface;
         padding: 1 2;
-    }
-    #help-title {
-        text-style: bold;
-        padding: 0 0 1 0;
     }
     #help-hints {
         color: $text-muted;
@@ -74,11 +70,13 @@ class HelpScreen(ModalScreen[bool]):
     @override
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static("Keybindings", id="help-title"),
             Static(HELP_TEXT),
             Static("[b]esc[/b] or [b]?[/b] to close", id="help-hints"),
             id="help-modal",
         )
+
+    def on_mount(self) -> None:
+        self.query_one("#help-modal").border_title = "Keybindings"
 
     def action_close(self) -> None:
         self.dismiss(True)

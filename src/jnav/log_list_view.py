@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, override
 from rich.text import Text
 from textual.binding import Binding
 from textual.reactive import reactive
-from textual.widgets import ListView
+from textual.widgets import ListView, Static
 
 from .field_manager import FieldManager
 from .filtering import get_nested
@@ -67,20 +67,19 @@ class LogListView(ListView):
         height: 1fr;
     }
     LogListView LogEntryItem {
+    }
+    LogListView LogEntryItem > EntrySummary {
         padding: 0 1;
-        border-left: blank;
+        background: $surface-lighten-1;
     }
-    LogListView > LogEntryItem.-highlight {
-        color: $foreground;
-        background: $background-lighten-2;
-        text-style: none;
-        border-left: thick $accent;
+    LogListView LogEntryItem.-highlight > EntrySummary {
+        background: #2a3340;
     }
-    LogListView:focus > LogEntryItem.-highlight {
-        color: $foreground;
-        background: $background-lighten-3;
-        text-style: none;
-        border-left: thick $accent;
+    LogListView LogEntryItem.-highlight > InlineTree {
+        background: #242c38;
+    }
+    LogListView.expanded-mode InlineTree {
+        display: block;
     }
     """
 
@@ -99,12 +98,26 @@ class LogListView(ListView):
         self._current_index: int = 0
         self._follow_next_rebuild: bool = False
         self._expanded_mode: bool = True
+        self._chrome: tuple[Static, ...] = ()
 
     async def on_mount(self) -> None:
         await self._model.on_append.subscribe_async(self._on_append)
         await self._model.on_rebuild.subscribe_async(self._on_rebuild)
         await self._fields.on_change.subscribe_async(self._on_refresh)
         await self._search.on_change.subscribe_async(self._on_refresh)
+
+    def on_focus(self) -> None:
+        for w in self._chrome:
+            w.add_class("focused")
+
+    def on_blur(self) -> None:
+        for w in self._chrome:
+            w.remove_class("focused")
+
+    def set_chrome(self, *widgets: Static) -> None:
+        self._chrome = widgets
+        if self.has_focus:
+            self.on_focus()
 
     def set_expanded_mode(self, expanded: bool) -> None:
         hi = self.index or 0

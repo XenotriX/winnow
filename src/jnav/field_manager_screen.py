@@ -23,13 +23,9 @@ class FieldManagerScreen(ModalScreen[bool]):
         max-width: 90%;
         height: auto;
         max-height: 70%;
-        border: solid $surface-lighten-2;
+        border: round $surface-lighten-2;
         background: $surface;
         padding: 1 2;
-    }
-    #field-modal-title {
-        text-style: bold;
-        padding: 0 0 1 0;
     }
     #field-list {
         height: auto;
@@ -64,7 +60,6 @@ class FieldManagerScreen(ModalScreen[bool]):
     @override
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static("Fields", id="field-modal-title"),
             OptionList(id="field-list"),
             Input(
                 placeholder="field path (e.g. data.role)...",
@@ -79,6 +74,7 @@ class FieldManagerScreen(ModalScreen[bool]):
         )
 
     def on_mount(self) -> None:
+        self.query_one("#field-modal").border_title = "Fields"
         self._refresh_list()
         self.query_one("#field-list", OptionList).focus()
 

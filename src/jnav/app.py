@@ -6,7 +6,8 @@ from typing import override
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
+from textual.theme import Theme
 from textual.widgets import Footer, Header, ListView, Static
 
 from jnav.field_manager import FieldManager
@@ -32,17 +33,50 @@ class FilterBar(Static):
 
 class JnavApp(App[None]):
     CSS = """
-    #filter-bar {
-        height: 1;
-        padding: 0 1;
-        color: $text-muted;
+    * {
+        scrollbar-size-vertical: 1;
+        scrollbar-color: #444444;
+        scrollbar-color-hover: #666666;
+        scrollbar-color-active: #888888;
+        scrollbar-background: $surface;
+        scrollbar-background-hover: $surface;
+        border-title-color: $accent;
+    }
+    ModalScreen {
+        background: $background 80%;
     }
     #content-area {
         height: 1fr;
     }
-    #detail-tree {
+    #filter-bar {
+        height: 1;
+        padding: 0 1;
+        color: $text-muted;
+        background: $surface;
+    }
+    #log-panel {
+        opacity: 0.75;
+    }
+    #log-panel:focus-within {
+        opacity: 1.0;
+    }
+    #filter-bar.focused {
+        color: $accent;
+    }
+    #log-list:focus {
+        background-tint: transparent;
+    }
+    #detail-panel {
         width: 40%;
-        padding: 0 0 0 2;
+        border: round $surface-lighten-2;
+        border-title-align: center;
+        background: $surface;
+    }
+    #detail-panel:focus-within {
+        border: round $accent;
+    }
+    #detail-tree:focus {
+        background-tint: transparent;
     }
     """
 
@@ -75,6 +109,16 @@ class JnavApp(App[None]):
         state_file: Path | None = None,
     ) -> None:
         super().__init__()
+        self.register_theme(Theme(
+            name="jnav",
+            primary="#0178D4",
+            accent="#61AFEF",
+            error="#ba3c5b",
+            warning="#ffa62b",
+            success="#4EBF71",
+            dark=True,
+        ))
+        self.theme = "jnav"
         self._model = model
         self._filter_provider = filter_provider
         self._fields = fields
@@ -88,20 +132,26 @@ class JnavApp(App[None]):
     @override
     def compose(self) -> ComposeResult:
         yield Header()
-        yield FilterBar(id="filter-bar")
         yield Horizontal(
-            LogListView(
-                model=self._model,
-                fields=self._fields,
-                search=self._search,
-                id="log-list",
+            Vertical(
+                LogListView(
+                    model=self._model,
+                    fields=self._fields,
+                    search=self._search,
+                    id="log-list",
+                ),
+                FilterBar(id="filter-bar"),
+                id="log-panel",
             ),
-            DetailTree(
-                "entry",
-                fields=self._fields,
-                filters=self._filter_provider,
-                search=self._search,
-                id="detail-tree",
+            Vertical(
+                DetailTree(
+                    "entry",
+                    fields=self._fields,
+                    filters=self._filter_provider,
+                    search=self._search,
+                    id="detail-tree",
+                ),
+                id="detail-panel",
             ),
             id="content-area",
         )
@@ -115,11 +165,14 @@ class JnavApp(App[None]):
         await self._search.on_change.subscribe_async(self._on_search_changed)
 
         lv = self.query_one("#log-list", LogListView)
+        lv.set_chrome(self.query_one("#filter-bar", FilterBar))
         lv.set_expanded_mode(self._expanded_mode)
         lv.focus()
 
+        detail_panel = self.query_one("#detail-panel")
+        detail_panel.border_title = "Detail"
+        detail_panel.display = self._detail_visible_on_load
         detail_tree = self.query_one("#detail-tree", DetailTree)
-        detail_tree.display = self._detail_visible_on_load
         detail_tree.show_selected_only = self._show_selected_only_on_load
 
         self.call_after_refresh(self._initial_build)
@@ -147,6 +200,7 @@ class JnavApp(App[None]):
         if not self._state_file:
             return
         detail = self.query_one("#detail-tree", DetailTree)
+        panel = self.query_one("#detail-panel")
         lv = self.query_one("#log-list", LogListView)
         state = {
             "filters": self._filter_provider.get_filters(),
@@ -155,7 +209,7 @@ class JnavApp(App[None]):
             "filters_paused": self._model.filtering_enabled is False,
             "search_term": self._search.term,
             "entry_index": lv.current_index(),
-            "detail_visible": detail.display,
+            "detail_visible": panel.display,
             "show_selected_only": detail.show_selected_only,
         }
         try:
@@ -198,13 +252,6 @@ class JnavApp(App[None]):
             total = len(self._search.matches)
             pos = self._search_pos + 1 if total else 0
             parts.append(f"/{self._search.term} ({pos}/{total})")
-
-        if (
-            not self._filter_provider.get_filters()
-            and not self._fields.custom_fields
-            and not self._search.term
-        ):
-            parts.append("  /: search  f: filter  ?: help")
 
         bar.update("  \u2502  ".join(parts))
 
@@ -283,21 +330,21 @@ class JnavApp(App[None]):
         self.push_screen(SearchInputScreen("Text Filter (OR)"), on_dismiss)
 
     def action_toggle_detail(self) -> None:
-        detail = self.query_one("#detail-tree", DetailTree)
-        if detail.display:
-            detail.display = False
+        panel = self.query_one("#detail-panel")
+        if panel.display:
+            panel.display = False
             self._focus_main()
         else:
-            detail.display = True
+            panel.display = True
 
     def action_inspect(self) -> None:
         lv = self.query_one("#log-list", LogListView)
         if self.focused != lv:
             return
-        detail = self.query_one("#detail-tree", DetailTree)
-        if not detail.display:
-            detail.display = True
-        detail.focus()
+        panel = self.query_one("#detail-panel")
+        if not panel.display:
+            panel.display = True
+        self.query_one("#detail-tree", DetailTree).focus()
 
     async def action_reset(self) -> None:
         await self._fields.clear_custom_fields()
@@ -313,14 +360,12 @@ class JnavApp(App[None]):
             self.notify("Entry copied to clipboard", timeout=2)
 
     def action_focus_list(self) -> None:
-        detail = self.query_one("#detail-tree", DetailTree)
-        if detail.display:
+        if self.query_one("#detail-panel").display:
             self.query_one("#log-list", LogListView).focus()
 
     def action_focus_detail(self) -> None:
-        detail = self.query_one("#detail-tree", DetailTree)
-        if detail.display:
-            detail.focus()
+        if self.query_one("#detail-panel").display:
+            self.query_one("#detail-tree", DetailTree).focus()
 
     async def action_toggle_filters_pause(self) -> None:
         if not self._filter_provider.get_filters():

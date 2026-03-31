@@ -123,7 +123,7 @@ def jq_value_literal(value: object) -> str:
     return json.dumps(value)
 
 
-def _jq_path_to_str(parts: list) -> str:
+def _jq_path_to_str(parts: list[str | int]) -> str:
     result = ""
     for p in parts:
         if isinstance(p, int):

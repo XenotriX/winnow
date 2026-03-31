@@ -100,11 +100,11 @@ class EntrySummary(Static):
         self._parsed = parsed
 
     def format_default(self, value: str) -> tuple[str, Style]:
-        text_style = self.get_component_rich_style("summary--text")
+        text_style = self.get_component_rich_style("summary--text", partial=True)
         return (value, text_style)
 
     def format_timestamp(self, value: str) -> tuple[str, Style]:
-        text_style = self.get_component_rich_style("summary--text")
+        text_style = self.get_component_rich_style("summary--text", partial=True)
         try:
             dt = datetime.fromisoformat(value)
             s = dt.strftime("%H:%M:%S") + f".{dt.microsecond // 1000:03d}"
@@ -116,7 +116,7 @@ class EntrySummary(Static):
         component = LEVEL_COMPONENTS.get(s.strip().lower())
         s = get_level_shorthand(s)
         if component:
-            level_style = self.get_component_rich_style(component)
+            level_style = self.get_component_rich_style(component, partial=True)
             return (s, level_style)
         else:
             return self.format_default(s)

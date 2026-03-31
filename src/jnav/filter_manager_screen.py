@@ -24,13 +24,9 @@ class FilterManagerScreen(ModalScreen[bool]):
         max-width: 90%;
         height: auto;
         max-height: 70%;
-        border: solid $surface-lighten-2;
+        border: round $surface-lighten-2;
         background: $surface;
         padding: 1 2;
-    }
-    #filter-modal-title {
-        text-style: bold;
-        padding: 0 0 1 0;
     }
     #filter-list {
         height: auto;
@@ -66,7 +62,6 @@ class FilterManagerScreen(ModalScreen[bool]):
     @override
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static("Filters", id="filter-modal-title"),
             OptionList(id="filter-list"),
             Input(
                 placeholder="jq expression...", id="filter-add-input", classes="hidden"
@@ -79,6 +74,7 @@ class FilterManagerScreen(ModalScreen[bool]):
         )
 
     def on_mount(self) -> None:
+        self.query_one("#filter-modal").border_title = "Filters"
         self._refresh_list()
         self.query_one("#filter-list", OptionList).focus()
 

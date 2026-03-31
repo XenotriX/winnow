@@ -145,10 +145,12 @@ class DetailTree(Tree[TreeNodeData]):
         label = f"#{self._entry_index + 1}"
         if ts_val:
             label += f" ({_format_timestamp(str(ts_val))})"
+        if self.show_selected_only:
+            label += " (selected)"
 
         self.clear()
+        self.root.set_label(label)
         if self.show_selected_only:
-            self.root.set_label(f"{label} (selected)")
             filtered = {col: get_nested(entry, col) for col in self._fields.active_fields}
             _build_tree(
                 self.root,
@@ -158,7 +160,6 @@ class DetailTree(Tree[TreeNodeData]):
                 json_paths=self._entry.expanded_paths,
             )
         else:
-            self.root.set_label(label)
             _build_tree(
                 self.root,
                 entry,

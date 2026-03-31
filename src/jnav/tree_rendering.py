@@ -12,7 +12,7 @@ AddLeafFn = Callable[[Text, str, object], None]
 
 PRIORITY_KEYS = ("timestamp", "ts", "time", "level", "severity", "message", "msg")
 
-SELECTED_STYLE = "bold bright_green underline"
+SELECTED_STYLE = "#61AFEF bold underline"
 JSON_STRING_STYLE = "orange3 italic"
 SEARCH_HIGHLIGHT_STYLE = "on dark_orange3"
 
@@ -24,15 +24,9 @@ def sorted_keys(d: dict[str, Any]) -> list[str]:
 
 
 def value_style(value: object) -> str:
-    if isinstance(value, bool):
-        return "bright_magenta"
     if value is None:
-        return "dim italic"
-    if isinstance(value, (int, float)):
-        return "bright_cyan"
-    if isinstance(value, str):
-        return "orange3"
-    return ""
+        return "#ffffff dim italic"
+    return "#ffffff"
 
 
 def oneline(value: object) -> str:
@@ -67,7 +61,7 @@ def branch_label(
     from_json_string: bool = False,
 ) -> Text:
     is_custom = path in custom_selected
-    key_style = SELECTED_STYLE if is_custom else "bold"
+    key_style = SELECTED_STYLE if is_custom else "#61AFEF italic"
     if isinstance(value, dict):
         indicator = '"{}"' if from_json_string else "{}"
         ind_style = JSON_STRING_STYLE if from_json_string else "dim"
@@ -78,12 +72,12 @@ def branch_label(
         indicator = f'"[{n} items]"' if from_json_string else f"[{n} items]"
         ind_style = JSON_STRING_STYLE if from_json_string else "dim"
         return Text.assemble((key, key_style), (": ", "dim"), (indicator, ind_style))
-    return Text(key, style="bold")
+    return Text(key, style="#61AFEF italic")
 
 
 def leaf_label(key: str, value: object, path: str, custom_selected: set[str]) -> Text:
     is_custom = path in custom_selected
-    key_style = SELECTED_STYLE if is_custom else "bold"
+    key_style = SELECTED_STYLE if is_custom else "#61AFEF italic"
     label = Text.assemble(
         (key, key_style), (": ", "dim"), (oneline(value), value_style(value))
     )

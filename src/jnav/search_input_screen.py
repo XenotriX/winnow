@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Input, Static
+from textual.widgets import Input
 
 
 class SearchInputScreen(ModalScreen[str | None]):
@@ -16,13 +16,9 @@ class SearchInputScreen(ModalScreen[str | None]):
         width: 50;
         max-width: 90%;
         height: auto;
-        border: solid $surface-lighten-2;
+        border: round $surface-lighten-2;
         background: $surface;
         padding: 1 2;
-    }
-    #search-title {
-        text-style: bold;
-        padding: 0 0 1 0;
     }
     """
 
@@ -40,12 +36,12 @@ class SearchInputScreen(ModalScreen[str | None]):
     @override
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static(self._title, id="search-title"),
             Input(placeholder=self._placeholder, id="search-input"),
             id="search-modal",
         )
 
     def on_mount(self) -> None:
+        self.query_one("#search-modal").border_title = self._title
         self.query_one("#search-input", Input).focus()
 
     @on(Input.Submitted, "#search-input")
