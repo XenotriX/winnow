@@ -10,8 +10,10 @@ T = TypeVar("T")
 
 PRIORITY_KEYS = ("timestamp", "ts", "time", "level", "severity", "message", "msg")
 
-JSON_STRING_STYLE = "orange3 italic"
-SEARCH_HIGHLIGHT_STYLE = "on dark_orange3"
+DEFAULT_JSON_STRING_STYLE = "orange3 italic"
+DEFAULT_SEARCH_HIGHLIGHT_STYLE = "on dark_orange3"
+DEFAULT_VALUE_STYLE = ""
+DEFAULT_VALUE_NULL_STYLE = "dim italic"
 
 AddBranchFn = Callable[[Any, Text, str, object], Any]
 AddLeafFn = Callable[[Any, Text, str, object], None]
@@ -32,12 +34,6 @@ def sorted_keys(d: dict[str, Any]) -> list[str]:
     return priority + rest
 
 
-def value_style(value: object) -> str:
-    if value is None:
-        return "#ffffff dim italic"
-    return "#ffffff"
-
-
 def oneline(value: object) -> str:
     s = str(value)
     if "\n" in s:
@@ -46,7 +42,11 @@ def oneline(value: object) -> str:
     return s
 
 
-def highlight_text(text: Text, term: str) -> Text:
+def highlight_text(
+    text: Text,
+    term: str,
+    style: str | Style = DEFAULT_SEARCH_HIGHLIGHT_STYLE,
+) -> Text:
     if not term:
         return text
     plain = text.plain.lower()
@@ -56,7 +56,7 @@ def highlight_text(text: Text, term: str) -> Text:
         idx = plain.find(term_lower, start)
         if idx == -1:
             break
-        text.stylize(SEARCH_HIGHLIGHT_STYLE, idx, idx + len(term_lower))
+        text.stylize(style, idx, idx + len(term_lower))
         start = idx + 1
     return text
 
@@ -71,6 +71,10 @@ class TreeBuildVisitor(Generic[T]):
         selected: set[str],
         key_style: str | Style,
         selected_style: str | Style,
+        value_style: str | Style = DEFAULT_VALUE_STYLE,
+        value_null_style: str | Style = DEFAULT_VALUE_NULL_STYLE,
+        json_string_style: str | Style = DEFAULT_JSON_STRING_STYLE,
+        search_highlight_style: str | Style = DEFAULT_SEARCH_HIGHLIGHT_STYLE,
         search_term: str = "",
     ) -> None:
         self._stack: list[T] = [root]
@@ -79,13 +83,20 @@ class TreeBuildVisitor(Generic[T]):
         self._selected = selected
         self._key_style = key_style
         self._selected_style = selected_style
+        self._value_style = value_style
+        self._value_null_style = value_null_style
+        self._json_string_style = json_string_style
+        self._search_highlight_style = search_highlight_style
         self._search_term = search_term
 
     def _style_for(self, path: str) -> str | Style:
         return self._selected_style if path in self._selected else self._key_style
 
+    def _val_style(self, value: object) -> str | Style:
+        return self._value_null_style if value is None else self._value_style
+
     def _hl(self, text: Text) -> Text:
-        return highlight_text(text, self._search_term) if self._search_term else text
+        return highlight_text(text, self._search_term, self._search_highlight_style) if self._search_term else text
 
     def enter_property(self, key: str, value: dict[str, Any] | list[object], path: str, from_json: bool) -> None:
         style = self._style_for(path)
@@ -94,7 +105,7 @@ class TreeBuildVisitor(Generic[T]):
         else:
             n = len(value)
             indicator = f'"[{n} items]"' if from_json else f"[{n} items]"
-        ind_style = JSON_STRING_STYLE if from_json else "dim"
+        ind_style = self._json_string_style if from_json else "dim"
         label = self._hl(Text.assemble((key, style), (": ", "dim"), (indicator, ind_style)))
         new_node = self._add_branch(self._stack[-1], label, path, value)
         self._stack.append(new_node)
@@ -105,7 +116,7 @@ class TreeBuildVisitor(Generic[T]):
     def on_property(self, key: str, value: object, path: str) -> None:
         style = self._style_for(path)
         label = self._hl(Text.assemble(
-            (key, style), (": ", "dim"), (oneline(value), value_style(value))
+            (key, style), (": ", "dim"), (oneline(value), self._val_style(value))
         ))
         label.no_wrap = True
         label.overflow = "ellipsis"
@@ -121,7 +132,7 @@ class TreeBuildVisitor(Generic[T]):
 
     def on_item(self, index: int, value: object, path: str) -> None:
         label = self._hl(Text.assemble(
-            (f"[{index}]", "dim"), (": ", "dim"), (oneline(value), value_style(value))
+            (f"[{index}]", "dim"), (": ", "dim"), (oneline(value), self._val_style(value))
         ))
         label.no_wrap = True
         label.overflow = "ellipsis"

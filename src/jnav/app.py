@@ -35,9 +35,9 @@ class JnavApp(App[None]):
     CSS = """
     * {
         scrollbar-size-vertical: 1;
-        scrollbar-color: #444444;
-        scrollbar-color-hover: #666666;
-        scrollbar-color-active: #888888;
+        scrollbar-color: $surface-lighten-2;
+        scrollbar-color-hover: $surface-lighten-3;
+        scrollbar-color-active: $foreground-darken-2;
         scrollbar-background: $surface;
         scrollbar-background-hover: $surface;
         border-title-color: $accent;
@@ -45,6 +45,13 @@ class JnavApp(App[None]):
     ModalScreen {
         background: $background 80%;
     }
+    .tree--key { color: $primary; text-style: italic; }
+    .tree--key-selected { color: $primary; text-style: bold underline; }
+    .tree--value { color: $foreground; }
+    .tree--value-null { color: $foreground; text-style: dim italic; }
+    .tree--json-string { color: $warning; text-style: italic; }
+    .tree--search-highlight { color: $background; background: $accent; }
+    .summary--search-highlight { color: $background; background: $accent; }
     #content-area {
         height: 1fr;
     }

@@ -98,13 +98,15 @@ class LogListView(ListView):
     }
     LogListView LogEntryItem > EntrySummary {
         padding: 0 1;
-        background: $surface-lighten-1;
+        background: $surface;
     }
     LogListView LogEntryItem.-highlight > EntrySummary {
-        background: #2a3340;
+        background: $surface;
+        background-tint: $primary 30%;
     }
     LogListView LogEntryItem.-highlight > InlineTree {
-        background: #242c38;
+        background: $surface-darken-1;
+        background-tint: $primary 20%;
     }
     LogListView.expanded-mode InlineTree.has-content {
         display: block;

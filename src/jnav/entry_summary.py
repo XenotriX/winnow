@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable
+
+logger = logging.getLogger(__name__)
 
 from rich.style import Style
 from rich.text import Text
@@ -72,6 +75,7 @@ class EntrySummary(Static):
         "summary--level-info",
         "summary--level-debug",
         "summary--text",
+        "summary--search-highlight",
     }
 
     DEFAULT_CSS = """
@@ -108,7 +112,7 @@ class EntrySummary(Static):
     async def on_mount(self) -> None:
         await self._search.on_change.subscribe_async(self._on_change)
         self.app.theme_changed_signal.subscribe(self, lambda _: self._render_summary())
-        self._render_summary()
+        self.call_after_refresh(self._render_summary)
 
     def format_default(self, value: str) -> tuple[str, Style]:
         text_style = self.get_component_rich_style("summary--text", partial=True)
@@ -136,6 +140,9 @@ class EntrySummary(Static):
         self._render_summary()
 
     def _render_summary(self) -> None:
+        if not self.is_mounted:
+            logger.warning("_render_summary called before mount")
+            return
         parts: list[str | tuple[str, str | Style]] = []
         for col in self.columns:
             val = get_nested(self._parsed.expanded, col.key)
@@ -144,4 +151,5 @@ class EntrySummary(Static):
             parts.append(formatted)
             parts.append(" ")
         text = Text.assemble(*parts) if parts else Text("(empty)")
-        self.update(highlight_text(text, self._search.term))
+        hl_style = self.get_component_rich_style("summary--search-highlight", partial=True)
+        self.update(highlight_text(text, self._search.term, hl_style))

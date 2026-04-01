@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from rich.text import Text
 from rich.tree import Tree as RichTree
@@ -44,6 +47,10 @@ class InlineTree(Static):
     COMPONENT_CLASSES = {
         "tree--key",
         "tree--key-selected",
+        "tree--value",
+        "tree--value-null",
+        "tree--json-string",
+        "tree--search-highlight",
     }
 
     DEFAULT_CSS = """
@@ -51,9 +58,7 @@ class InlineTree(Static):
         display: none;
         padding: 0 1 0 5;
         color: $foreground;
-        background: $surface;
-        & > .tree--key { color: $primary; text-style: italic; }
-        & > .tree--key-selected { color: $primary; text-style: bold underline; }
+        background: $surface-darken-1;
     }
     """
 
@@ -73,22 +78,20 @@ class InlineTree(Static):
         await self._fields.on_change.subscribe_async(self._on_change)
         await self._search.on_change.subscribe_async(self._on_change)
         self.app.theme_changed_signal.subscribe(self, lambda _: self._render_tree())
-        self._render_tree()
+        self.call_after_refresh(self._render_tree)
 
     async def _on_change(self, _: None) -> None:
         self._render_tree()
 
     def _render_tree(self) -> None:
+        if not self.is_mounted:
+            logger.warning("_render_tree called before mount")
+            return
         custom = self._fields.custom_fields_set
         if not custom:
             self.remove_class("has-content")
             return
         self.add_class("has-content")
-
-        key_style = self.get_component_rich_style("tree--key", partial=True)
-        selected_style = self.get_component_rich_style(
-            "tree--key-selected", partial=True
-        )
 
         filtered = {f: get_nested(self._parsed.expanded, f) for f in custom}
         tree = RichTree("", guide_style="dim", hide_root=True)
@@ -97,8 +100,12 @@ class InlineTree(Static):
             add_branch=_add_branch,
             add_leaf=_add_leaf,
             selected=custom,
-            key_style=key_style,
-            selected_style=selected_style,
+            key_style=self.get_component_rich_style("tree--key", partial=True),
+            selected_style=self.get_component_rich_style("tree--key-selected", partial=True),
+            value_style=self.get_component_rich_style("tree--value", partial=True),
+            value_null_style=self.get_component_rich_style("tree--value-null", partial=True),
+            json_string_style=self.get_component_rich_style("tree--json-string", partial=True),
+            search_highlight_style=self.get_component_rich_style("tree--search-highlight", partial=True),
             search_term=self._search.term,
         )
         walk_tree(

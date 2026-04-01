@@ -64,14 +64,13 @@ class DetailTree(Tree[TreeNodeData]):
     COMPONENT_CLASSES = {
         "tree--key",
         "tree--key-selected",
+        "tree--value",
+        "tree--value-null",
+        "tree--json-string",
+        "tree--search-highlight",
     }
 
-    DEFAULT_CSS = """
-    DetailTree {
-        & > .tree--key { color: $primary; text-style: italic; }
-        & > .tree--key-selected { color: $primary; text-style: bold underline; }
-    }
-    """
+    DEFAULT_CSS = ""
 
     if TYPE_CHECKING:
         app = getters.app(App[None])
@@ -151,9 +150,6 @@ class DetailTree(Tree[TreeNodeData]):
         if self.show_selected_only:
             label += " (selected)"
 
-        key_style = self.get_component_rich_style("tree--key", partial=True)
-        selected_style = self.get_component_rich_style("tree--key-selected", partial=True)
-
         self.clear()
         self.root.set_label(label)
         data = (
@@ -166,8 +162,12 @@ class DetailTree(Tree[TreeNodeData]):
             add_branch=_detail_add_branch,
             add_leaf=_detail_add_leaf,
             selected=selected,
-            key_style=key_style,
-            selected_style=selected_style,
+            key_style=self.get_component_rich_style("tree--key", partial=True),
+            selected_style=self.get_component_rich_style("tree--key-selected", partial=True),
+            value_style=self.get_component_rich_style("tree--value", partial=True),
+            value_null_style=self.get_component_rich_style("tree--value-null", partial=True),
+            json_string_style=self.get_component_rich_style("tree--json-string", partial=True),
+            search_highlight_style=self.get_component_rich_style("tree--search-highlight", partial=True),
             search_term=self._search.term,
         )
         walk_tree(value=data, path="", visitor=visitor, json_paths=self._entry.expanded_paths)
