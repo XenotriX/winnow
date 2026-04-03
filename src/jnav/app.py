@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.theme import Theme
-from textual.widgets import Footer, Header, ListView, Static
+from textual.widgets import Footer, Header, Static
 
 from jnav.field_manager import FieldManager
 from jnav.field_manager_screen import FieldManagerScreen
@@ -18,11 +18,12 @@ from jnav.help_screen import HelpScreen
 from jnav.log_model import LogModel
 from jnav.search_engine import SearchEngine
 from jnav.search_input_screen import SearchInputScreen
+from jnav.virtual_list_view import VirtualListView
 
 from .detail_tree import DetailTree
 from .filtering import text_search_expr
-from .log_entry_item import LogEntryItem
 from .log_list_view import LogListView
+from .store import IndexedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +65,10 @@ class JnavApp(App[None]):
     #log-panel {
         opacity: 0.75;
     }
-    #log-panel:focus-within {
+    #log-panel.focused {
         opacity: 1.0;
     }
-    #filter-bar.focused {
+    #log-panel.focused > #filter-bar {
         color: $accent;
     }
     #log-list:focus {
@@ -79,7 +80,7 @@ class JnavApp(App[None]):
         border-title-align: center;
         background: $surface;
     }
-    #detail-panel:focus-within {
+    #detail-panel.focused {
         border: round $accent;
     }
     #detail-tree:focus {
@@ -116,15 +117,17 @@ class JnavApp(App[None]):
         state_file: Path | None = None,
     ) -> None:
         super().__init__()
-        self.register_theme(Theme(
-            name="jnav",
-            primary="#0178D4",
-            accent="#61AFEF",
-            error="#ba3c5b",
-            warning="#ffa62b",
-            success="#4EBF71",
-            dark=True,
-        ))
+        self.register_theme(
+            Theme(
+                name="jnav",
+                primary="#0178D4",
+                accent="#61AFEF",
+                error="#ba3c5b",
+                warning="#ffa62b",
+                success="#4EBF71",
+                dark=True,
+            )
+        )
         self.theme = "jnav"
         self._model = model
         self._filter_provider = filter_provider
@@ -172,7 +175,6 @@ class JnavApp(App[None]):
         await self._search.on_change.subscribe_async(self._on_search_changed)
 
         lv = self.query_one("#log-list", LogListView)
-        lv.set_chrome(self.query_one("#filter-bar", FilterBar))
         lv.set_expanded_mode(self._expanded_mode)
         lv.focus()
 
@@ -391,14 +393,13 @@ class JnavApp(App[None]):
         elif self._search.active:
             await self._search.clear()
 
-    @on(ListView.Highlighted, "#log-list")
-    def on_log_highlighted(self, event: ListView.Highlighted) -> None:
-        if event.item and isinstance(event.item, LogEntryItem):
-            self.query_one("#detail-tree", DetailTree).show_entry(
-                self._model.get(event.item.entry_index), event.item.entry_index
-            )
+    @on(VirtualListView.Highlighted, "#log-list")
+    def on_log_highlighted(self, event: VirtualListView.Highlighted) -> None:
+        ie = event.item
+        if isinstance(ie, IndexedEntry):
+            self.query_one("#detail-tree", DetailTree).show_entry(ie.entry, ie.index)
 
-    @on(ListView.Selected, "#log-list")
-    def on_log_selected(self, event: ListView.Selected) -> None:
+    @on(VirtualListView.Selected, "#log-list")
+    def on_log_selected(self, event: VirtualListView.Selected) -> None:
         del event  # unused
         self.action_inspect()

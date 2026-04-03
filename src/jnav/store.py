@@ -27,8 +27,8 @@ class Store:
         indexed = [IndexedEntry(start + i, e) for i, e in enumerate(new_entries)]
         await self.on_append.asend(indexed)
 
-    def get(self, index: int) -> LogEntry:
-        return self.entries[index]
+    def get(self, index: int) -> IndexedEntry:
+        return IndexedEntry(index, self.entries[index])
 
     def all(self) -> list[IndexedEntry]:
         return [IndexedEntry(i, e) for i, e in enumerate(self.entries)]

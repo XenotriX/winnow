@@ -3,6 +3,7 @@ from typing import Literal
 from aioreactive import AsyncSubject
 from jnav.filtering import Filter
 
+
 class FilterProvider:
     _filters: list[Filter]
     on_change: AsyncSubject[None]

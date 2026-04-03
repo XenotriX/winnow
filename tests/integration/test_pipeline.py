@@ -67,8 +67,8 @@ class TestFullPipeline:
             await store.append_entries(batch)
 
         assert len(store) == len(SAMPLE_LINES)
-        assert store.get(0).expanded["message"] == "hello"
-        assert store.get(1).expanded["message"] == "boom"
+        assert store.get(0).entry.expanded["message"] == "hello"
+        assert store.get(1).entry.expanded["message"] == "boom"
 
     @pytest.mark.asyncio
     async def test_lines_reach_model_via_subscribe(self) -> None:

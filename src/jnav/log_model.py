@@ -3,7 +3,7 @@ from aioreactive import AsyncSubject, pipe
 
 from jnav.filter_provider import FilterProvider
 from jnav.filtering import apply_combined_filters
-from jnav.store import IndexedEntry, LogEntry, Store
+from jnav.store import IndexedEntry, Store
 
 
 class LogModel:
@@ -50,8 +50,15 @@ class LogModel:
     def is_empty(self) -> bool:
         return self.count() == 0
 
-    def get(self, index: int) -> LogEntry:
+    def get(self, index: int) -> IndexedEntry:
         return self._store.get(index)
+
+    @property
+    def visible_entries(self) -> list[IndexedEntry]:
+        if not self._filtering_enabled:
+            return self.all()
+        indices = self.visible_indices
+        return [self._store.get(i) for i in indices]
 
     @property
     def visible_indices(self) -> list[int]:

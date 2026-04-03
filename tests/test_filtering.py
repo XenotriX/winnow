@@ -16,4 +16,4 @@ class TestTextSearchExpr:
 
     def test_escapes_quotes(self) -> None:
         expr = text_search_expr('say "hi"')
-        assert r'say \"hi\"' in expr
+        assert r"say \"hi\"" in expr

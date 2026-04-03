@@ -20,10 +20,14 @@ AddLeafFn = Callable[[Any, Text, str, object], None]
 
 
 class TreeVisitor(Protocol):
-    def enter_property(self, key: str, value: dict[str, Any] | list[object], path: str, from_json: bool) -> None: ...
+    def enter_property(
+        self, key: str, value: dict[str, Any] | list[object], path: str, from_json: bool
+    ) -> None: ...
     def exit_property(self) -> None: ...
     def on_property(self, key: str, value: object, path: str) -> None: ...
-    def enter_item(self, index: int, value: dict[str, Any] | list[object], path: str) -> None: ...
+    def enter_item(
+        self, index: int, value: dict[str, Any] | list[object], path: str
+    ) -> None: ...
     def exit_item(self) -> None: ...
     def on_item(self, index: int, value: object, path: str) -> None: ...
 
@@ -44,7 +48,7 @@ def oneline(value: object) -> str:
 
 def highlight_text(
     text: Text,
-    term: str,
+    term: str | None,
     style: str | Style = DEFAULT_SEARCH_HIGHLIGHT_STYLE,
 ) -> Text:
     if not term:
@@ -75,7 +79,7 @@ class TreeBuildVisitor(Generic[T]):
         value_null_style: str | Style = DEFAULT_VALUE_NULL_STYLE,
         json_string_style: str | Style = DEFAULT_JSON_STRING_STYLE,
         search_highlight_style: str | Style = DEFAULT_SEARCH_HIGHLIGHT_STYLE,
-        search_term: str = "",
+        search_term: str | None = "",
     ) -> None:
         self._stack: list[T] = [root]
         self._add_branch = add_branch
@@ -96,9 +100,15 @@ class TreeBuildVisitor(Generic[T]):
         return self._value_null_style if value is None else self._value_style
 
     def _hl(self, text: Text) -> Text:
-        return highlight_text(text, self._search_term, self._search_highlight_style) if self._search_term else text
+        return (
+            highlight_text(text, self._search_term, self._search_highlight_style)
+            if self._search_term
+            else text
+        )
 
-    def enter_property(self, key: str, value: dict[str, Any] | list[object], path: str, from_json: bool) -> None:
+    def enter_property(
+        self, key: str, value: dict[str, Any] | list[object], path: str, from_json: bool
+    ) -> None:
         style = self._style_for(path)
         if isinstance(value, dict):
             indicator = '"{}"' if from_json else "{}"
@@ -106,7 +116,9 @@ class TreeBuildVisitor(Generic[T]):
             n = len(value)
             indicator = f'"[{n} items]"' if from_json else f"[{n} items]"
         ind_style = self._json_string_style if from_json else "dim"
-        label = self._hl(Text.assemble((key, style), (": ", "dim"), (indicator, ind_style)))
+        label = self._hl(
+            Text.assemble((key, style), (": ", "dim"), (indicator, ind_style))
+        )
         new_node = self._add_branch(self._stack[-1], label, path, value)
         self._stack.append(new_node)
 
@@ -115,14 +127,18 @@ class TreeBuildVisitor(Generic[T]):
 
     def on_property(self, key: str, value: object, path: str) -> None:
         style = self._style_for(path)
-        label = self._hl(Text.assemble(
-            (key, style), (": ", "dim"), (oneline(value), self._val_style(value))
-        ))
+        label = self._hl(
+            Text.assemble(
+                (key, style), (": ", "dim"), (oneline(value), self._val_style(value))
+            )
+        )
         label.no_wrap = True
         label.overflow = "ellipsis"
         self._add_leaf(self._stack[-1], label, path, value)
 
-    def enter_item(self, index: int, value: dict[str, Any] | list[object], path: str) -> None:
+    def enter_item(
+        self, index: int, value: dict[str, Any] | list[object], path: str
+    ) -> None:
         label = self._hl(Text(f"[{index}]", style="dim"))
         new_node = self._add_branch(self._stack[-1], label, path, value)
         self._stack.append(new_node)
@@ -131,9 +147,13 @@ class TreeBuildVisitor(Generic[T]):
         self._stack.pop()
 
     def on_item(self, index: int, value: object, path: str) -> None:
-        label = self._hl(Text.assemble(
-            (f"[{index}]", "dim"), (": ", "dim"), (oneline(value), self._val_style(value))
-        ))
+        label = self._hl(
+            Text.assemble(
+                (f"[{index}]", "dim"),
+                (": ", "dim"),
+                (oneline(value), self._val_style(value)),
+            )
+        )
         label.no_wrap = True
         label.overflow = "ellipsis"
         self._add_leaf(self._stack[-1], label, path, value)
@@ -157,7 +177,9 @@ def walk_tree(
                 v = cast(dict[str, Any] | list[object], v)
                 from_json = child_path in jp
                 visitor.enter_property(k, v, child_path, from_json)
-                walk_tree(value=v, path=child_path, visitor=visitor, json_paths=json_paths)
+                walk_tree(
+                    value=v, path=child_path, visitor=visitor, json_paths=json_paths
+                )
                 visitor.exit_property()
             else:
                 visitor.on_property(k, v, child_path)
@@ -168,7 +190,9 @@ def walk_tree(
             if isinstance(item, (dict, list)):
                 item = cast(dict[str, Any] | list[object], item)
                 visitor.enter_item(i, item, child_path)
-                walk_tree(value=item, path=child_path, visitor=visitor, json_paths=json_paths)
+                walk_tree(
+                    value=item, path=child_path, visitor=visitor, json_paths=json_paths
+                )
                 visitor.exit_item()
             else:
                 visitor.on_item(i, item, child_path)

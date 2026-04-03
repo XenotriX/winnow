@@ -116,6 +116,14 @@ class DetailTree(Tree[TreeNodeData]):
         self._filters = filters
         self._search = search
 
+    def on_focus(self) -> None:
+        if self.parent is not None:
+            self.parent.add_class("focused")
+
+    def on_blur(self) -> None:
+        if self.parent is not None:
+            self.parent.remove_class("focused")
+
     async def on_mount(self) -> None:  # pyright: ignore[reportIncompatibleMethodOverride, reportImplicitOverride]
         await self._fields.on_change.subscribe_async(self._rerender)
         await self._search.on_change.subscribe_async(self._rerender)
@@ -163,14 +171,24 @@ class DetailTree(Tree[TreeNodeData]):
             add_leaf=_detail_add_leaf,
             selected=selected,
             key_style=self.get_component_rich_style("tree--key", partial=True),
-            selected_style=self.get_component_rich_style("tree--key-selected", partial=True),
+            selected_style=self.get_component_rich_style(
+                "tree--key-selected", partial=True
+            ),
             value_style=self.get_component_rich_style("tree--value", partial=True),
-            value_null_style=self.get_component_rich_style("tree--value-null", partial=True),
-            json_string_style=self.get_component_rich_style("tree--json-string", partial=True),
-            search_highlight_style=self.get_component_rich_style("tree--search-highlight", partial=True),
+            value_null_style=self.get_component_rich_style(
+                "tree--value-null", partial=True
+            ),
+            json_string_style=self.get_component_rich_style(
+                "tree--json-string", partial=True
+            ),
+            search_highlight_style=self.get_component_rich_style(
+                "tree--search-highlight", partial=True
+            ),
             search_term=self._search.term,
         )
-        walk_tree(value=data, path="", visitor=visitor, json_paths=self._entry.expanded_paths)
+        walk_tree(
+            value=data, path="", visitor=visitor, json_paths=self._entry.expanded_paths
+        )
         self.root.expand_all()
 
     def action_leader_filter_and(self) -> None:

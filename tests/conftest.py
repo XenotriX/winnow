@@ -1,6 +1,5 @@
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
 
 from jnav.store import IndexedEntry
 
@@ -17,7 +16,9 @@ async def fake_line_reader(lines: list[str]) -> AsyncIterator[str]:
         yield line
 
 
-def make_collector() -> tuple[list[list[IndexedEntry]], Callable[[list[IndexedEntry]], Awaitable[None]]]:
+def make_collector() -> tuple[
+    list[list[IndexedEntry]], Callable[[list[IndexedEntry]], Awaitable[None]]
+]:
     items: list[list[IndexedEntry]] = []
 
     async def collect(item: list[IndexedEntry]) -> None:

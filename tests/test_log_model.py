@@ -49,7 +49,7 @@ class TestAccessors:
 
         assert not model.is_empty()
         assert model.count() == 1
-        assert model.get(0) is entry
+        assert model.get(0).entry is entry
         assert [ie.entry for ie in model.all()] == [entry]
 
     @pytest.mark.asyncio

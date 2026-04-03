@@ -36,7 +36,9 @@ class TestBufferTimeOrCount:
 
         observable = rx.from_async_iterable(source())
         batches: list[list[int]] = []
-        async for batch in buffer_time_or_count(observable, max_count=100, timeout=10.0):
+        async for batch in buffer_time_or_count(
+            observable, max_count=100, timeout=10.0
+        ):
             batches.append(batch)
 
         all_items = [item for batch in batches for item in batch]

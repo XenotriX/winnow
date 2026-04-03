@@ -100,11 +100,13 @@ class TestSearchEngineMatches:
     async def test_matches_are_store_indices(self, env: Env) -> None:
         """Matches contain store indices, not list positions."""
         store, _, search = env
-        await store.append_entries([
-            preprocess_entry(_entry("INFO", "hello")),
-            preprocess_entry(_entry("ERROR", "world")),
-            preprocess_entry(_entry("INFO", "hello again")),
-        ])
+        await store.append_entries(
+            [
+                preprocess_entry(_entry("INFO", "hello")),
+                preprocess_entry(_entry("ERROR", "world")),
+                preprocess_entry(_entry("INFO", "hello again")),
+            ]
+        )
 
         await search.set_term("hello")
 
@@ -133,10 +135,12 @@ class TestSearchEngineMatches:
     @pytest.mark.asyncio
     async def test_matches_recomputed_on_rebuild(self, env: Env) -> None:
         store, model, search = env
-        await store.append_entries([
-            preprocess_entry(_entry("INFO", "hello")),
-            preprocess_entry(_entry("ERROR", "world")),
-        ])
+        await store.append_entries(
+            [
+                preprocess_entry(_entry("INFO", "hello")),
+                preprocess_entry(_entry("ERROR", "world")),
+            ]
+        )
         await search.set_term("hello")
         assert search.matches == [0]
 
@@ -151,10 +155,12 @@ class TestSearchEngineMatches:
         await search.set_term("hello")
         assert search.matches == [0]
 
-        await store.append_entries([
-            preprocess_entry(_entry("ERROR", "world")),
-            preprocess_entry(_entry("INFO", "hello again")),
-        ])
+        await store.append_entries(
+            [
+                preprocess_entry(_entry("ERROR", "world")),
+                preprocess_entry(_entry("INFO", "hello again")),
+            ]
+        )
 
         # Store indices: 0=hello, 1=world, 2=hello again
         assert search.matches == [0, 2]
@@ -220,10 +226,12 @@ class TestSearchEngineMatches:
     async def test_matches_include_filtered_out_entries(self, env: Env) -> None:
         """Matches are store indices, independent of visible_indices."""
         store, model, search = env
-        await store.append_entries([
-            preprocess_entry(_entry("INFO", "hello")),
-            preprocess_entry(_entry("ERROR", "hello")),
-        ])
+        await store.append_entries(
+            [
+                preprocess_entry(_entry("INFO", "hello")),
+                preprocess_entry(_entry("ERROR", "hello")),
+            ]
+        )
         # Even if entry 0 is filtered out, search still finds it
         await search.set_term("hello")
 

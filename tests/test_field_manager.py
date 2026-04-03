@@ -47,11 +47,15 @@ class TestDiscover:
         assert fm.all_fields.count("a") == 1
 
     def test_base_fields_set_on_first_discover(self, fm: FieldManager) -> None:
-        fm.discover([_ie(0, {"ts": "2025-01-01", "level": "INFO", "message": "hi", "extra": 1})])
+        fm.discover(
+            [_ie(0, {"ts": "2025-01-01", "level": "INFO", "message": "hi", "extra": 1})]
+        )
 
         assert fm.base_fields == ["ts", "level", "message"]
 
-    def test_base_fields_not_overwritten_on_subsequent_discover(self, fm: FieldManager) -> None:
+    def test_base_fields_not_overwritten_on_subsequent_discover(
+        self, fm: FieldManager
+    ) -> None:
         fm.discover([_ie(0, {"level": "INFO"})])
         first_base = list(fm.base_fields)
         fm.discover([_ie(1, {"level": "INFO", "ts": "2025-01-01"})])

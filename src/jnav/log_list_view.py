@@ -1,115 +1,61 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, override
+from bisect import bisect_left
+from typing import TYPE_CHECKING, override
 
+from rich.console import RenderableType
+from rich.style import Style
 from textual.binding import Binding
-from textual.reactive import reactive
-from textual.widgets import ListView, Static
 
 from .field_manager import FieldManager
-from .filtering import get_nested
-from .log_entry_item import LogEntryItem
+from .log_entry_item import LEVEL_COMPONENTS
+from .log_entry_renderer import EntryStyles, LogEntryRenderer
 from .log_model import LogModel
 from .search_engine import SearchEngine
 from .store import IndexedEntry
-from .tree_rendering import walk_tree
-
-
-class _CountVisitor:
-    def __init__(self) -> None:
-        self.count = 0
-
-    def enter_property(
-        self,
-        key: str,
-        value: dict[str, Any] | list[object],
-        path: str,
-        from_json: bool,
-    ) -> None:
-        del key, value, path, from_json  # unused
-        self.count += 1
-
-    def exit_property(self) -> None:
-        pass
-
-    def on_property(
-        self,
-        key: str,
-        value: object,
-        path: str,
-    ) -> None:
-        del key, value, path  # unused
-        self.count += 1
-
-    def enter_item(
-        self,
-        index: int,
-        value: dict[str, Any] | list[object],
-        path: str,
-    ) -> None:
-        del index, value, path  # unused
-        self.count += 1
-
-    def exit_item(self) -> None:
-        pass
-
-    def on_item(
-        self,
-        index: int,
-        value: object,
-        path: str,
-    ) -> None:
-        del index, value, path  # unused
-        self.count += 1
-
-
-def _count_tree_nodes(value: object) -> int:
-    visitor = _CountVisitor()
-    walk_tree(value=value, path="", visitor=visitor)
-    return visitor.count
-
+from .virtual_list_view import VirtualListView
 
 if TYPE_CHECKING:
     from textual import getters
     from textual.app import App
 
 
-class LogListView(ListView):
-    index: reactive[int | None] | int | None
-
+class LogListView(VirtualListView[IndexedEntry]):
     if TYPE_CHECKING:
         app = getters.app(App[None])
 
+    COMPONENT_CLASSES = {
+        "summary--level-error",
+        "summary--level-warning",
+        "summary--level-info",
+        "summary--level-debug",
+        "summary--text",
+        "summary--search-highlight",
+        "summary--cursor",
+        "tree--key",
+        "tree--key-selected",
+        "tree--value",
+        "tree--value-null",
+        "tree--json-string",
+        "tree--search-highlight",
+        "tree--background",
+    }
+
     BINDINGS = [
-        Binding("j", "cursor_down", show=False),
-        Binding("k", "cursor_up", show=False),
-        Binding("ctrl+d", "scroll_half_down", show=False),
-        Binding("ctrl+u", "scroll_half_up", show=False),
-        Binding("g", "jump_top", show=False),
-        Binding("G", "jump_bottom", show=False),
         Binding("e", "toggle_expanded", "Expand"),
     ]
 
     DEFAULT_CSS = """
     LogListView {
         height: 1fr;
-    }
-    LogListView LogEntryItem {
-    }
-    LogListView LogEntryItem > EntrySummary {
-        padding: 0 1;
         background: $surface;
-    }
-    LogListView LogEntryItem.-highlight > EntrySummary {
-        background: $surface;
-        background-tint: $primary 30%;
-    }
-    LogListView LogEntryItem.-highlight > InlineTree {
-        background: $surface-darken-1;
-        background-tint: $primary 20%;
-    }
-    LogListView.expanded-mode InlineTree.has-content {
-        display: block;
+        & > .summary--level-error { color: $error; text-style: bold; }
+        & > .summary--level-warning { color: $warning; text-style: bold; }
+        & > .summary--level-info { color: $primary; text-style: bold; }
+        & > .summary--level-debug { color: $success; text-style: bold; }
+        & > .summary--text { color: $foreground; }
+        & > .summary--cursor { background: $primary 30%; }
+        & > .tree--background { background: $surface-darken-1; }
     }
     """
 
@@ -121,53 +67,90 @@ class LogListView(ListView):
         search: SearchEngine,
         id: str | None = None,
     ) -> None:
-        super().__init__(id=id)
+        super().__init__(
+            render_item=self._render_entry,
+            id=id,
+        )
         self._model = model
         self._fields = fields
         self._search = search
-        self._current_index: int = 0
-        self._follow_next_rebuild: bool = False
         self._expanded_mode: bool = True
-        self._chrome: tuple[Static, ...] = ()
+        self._renderer = LogEntryRenderer(
+            search=search,
+            custom_fields=self._fields.custom_fields_set,
+        )
+        self._entry_styles: EntryStyles | None = None
+
+    def _resolve_styles(self) -> EntryStyles:
+        base_bg = self.styles.background
+        cursor_color = self.get_component_styles("summary--cursor").background
+        blended = base_bg.blend(cursor_color, cursor_color.a)
+        return EntryStyles(
+            text=self.get_component_rich_style("summary--text", partial=True),
+            levels={
+                comp: self.get_component_rich_style(comp, partial=True)
+                for comp in LEVEL_COMPONENTS.values()
+            },
+            highlight=self.get_component_rich_style(
+                "summary--search-highlight", partial=True
+            ),
+            cursor_bg=Style(bgcolor=blended.rich_color),
+            tree_key=self.get_component_rich_style("tree--key", partial=True),
+            tree_key_selected=self.get_component_rich_style(
+                "tree--key-selected", partial=True
+            ),
+            tree_value=self.get_component_rich_style("tree--value", partial=True),
+            tree_value_null=self.get_component_rich_style(
+                "tree--value-null", partial=True
+            ),
+            tree_json_string=self.get_component_rich_style(
+                "tree--json-string", partial=True
+            ),
+            tree_search_highlight=self.get_component_rich_style(
+                "tree--search-highlight", partial=True
+            ),
+            tree_bg=self.get_component_styles("tree--background").background,
+            cursor_color=cursor_color,
+        )
+
+    @override
+    def render(self) -> RenderableType:
+        self._entry_styles = self._resolve_styles()
+        self._renderer.custom_fields = self._fields.custom_fields_set
+        return super().render()
+
+    def _render_entry(self, ie: IndexedEntry, index: int) -> RenderableType:
+        assert self._entry_styles is not None
+        return self._renderer.render(
+            ie,
+            styles=self._entry_styles,
+            is_cursor=index == self.index,
+            expanded=self._expanded_mode,
+            width=self.size.width,
+        )
 
     async def on_mount(self) -> None:
         await self._model.on_append.subscribe_async(self._on_append)
         await self._model.on_rebuild.subscribe_async(self._on_rebuild)
+        await self._fields.on_change.subscribe_async(self._on_fields_or_search_changed)
+        await self._search.on_change.subscribe_async(self._on_fields_or_search_changed)
+
+    async def _on_fields_or_search_changed(self, _: None) -> None:
+        self.refresh()
 
     def on_focus(self) -> None:
-        for w in self._chrome:
-            w.add_class("focused")
+        if self.parent is not None:
+            self.parent.add_class("focused")
 
     def on_blur(self) -> None:
-        for w in self._chrome:
-            w.remove_class("focused")
-
-    def set_chrome(self, *widgets: Static) -> None:
-        self._chrome = widgets
-        if self.has_focus:
-            self.on_focus()
+        if self.parent is not None:
+            self.parent.remove_class("focused")
 
     def set_expanded_mode(self, expanded: bool) -> None:
-        hi = self.index or 0
-        delta = self._compute_expanded_scroll_delta(hi)
-
+        offset = self.cursor_viewport_offset()
         self._expanded_mode = expanded
-        if expanded:
-            self.add_class("expanded-mode")
-            new_y = self.scroll_y + delta
-        else:
-            self.remove_class("expanded-mode")
-            new_y = max(0, self.scroll_y - delta)
-
-        self.set_scroll(None, new_y)
-
-        def _fix_scroll() -> None:
-            self.scroll_to(y=new_y, animate=False, immediate=True, force=True)
-
-        self.call_after_refresh(_fix_scroll)
-
-    def set_current_index(self, index: int) -> None:
-        self._current_index = index
+        self.scroll_to_cursor_offset(offset)
+        self.refresh()
 
     @property
     def expanded_mode(self) -> bool:
@@ -176,12 +159,13 @@ class LogListView(ListView):
     def initial_build(self) -> None:
         self._fields.discover(self._model.all())
         self._rebuild()
+        if self._items:
+            self.index = 0
 
     def current_index(self) -> int:
-        list_idx = self.index or 0
         visible = self._model.visible_indices
-        if list_idx < len(visible):
-            return visible[list_idx]
+        if self.index < len(visible):
+            return visible[self.index]
         return 0
 
     def jump_to_index(self, store_idx: int) -> None:
@@ -191,99 +175,62 @@ class LogListView(ListView):
         except ValueError:
             pass
 
-    def _compute_expanded_scroll_delta(self, highlighted_index: int) -> int:
-        custom = self._fields.custom_fields_set
-        delta = 0
-        if custom:
-            for list_idx, vis_idx in enumerate(self._model.visible_indices):
-                if list_idx >= highlighted_index:
-                    break
-                parsed = self._model.get(vis_idx)
-                data = {col: get_nested(parsed.expanded, col) for col in custom}
-                delta += _count_tree_nodes(data)
-        return delta
-
     async def _on_append(self, new_entries: list[IndexedEntry]) -> None:
-        was_at_bottom = (
-            len(self._model.visible_indices) > 0
-            and (self.index or 0) >= len(self._model.visible_indices) - 1
-        )
-        was_empty = len(self) == 0
+        was_empty = self.count() == 0
+        was_at_bottom = not was_empty and self.index >= self.count() - 1
 
         self._fields.discover(new_entries)
-
-        if not new_entries:
-            return
-
-        with self.app.batch_update():
-            for ie in new_entries:
-                self.append(LogEntryItem(entry=ie, fields=self._fields, search=self._search))
+        for ie in new_entries:
+            self.append(ie)
 
         if was_at_bottom:
-            with self.prevent(ListView.Highlighted):
-                self.index = len(self._model.visible_indices) - 1
-
-        if was_empty and new_entries:
+            self.index = self.count() - 1
+        elif was_empty and self._items:
             self.index = 0
 
     async def _on_rebuild(self, _: None) -> None:
         self._rebuild()
 
     def _rebuild(self) -> None:
-        items: list[LogEntryItem] = []
-        target_list_index = 0
-        for list_idx, i in enumerate(self._model.visible_indices):
-            ie = IndexedEntry(i, self._model.get(i))
-            items.append(LogEntryItem(entry=ie, fields=self._fields, search=self._search))
-            if i == self._current_index:
-                target_list_index = list_idx
+        # Store index of currently highlighted entry (from old items, not model)
+        store_idx = self._items[self.index].index if self._items else 0
 
-        if self._follow_next_rebuild and items:
-            target_list_index = len(items) - 1
-            self._follow_next_rebuild = False
+        # Store viewport offset of currently highlighted entry
+        offset = self.cursor_viewport_offset()
 
-        with self.app.batch_update():
-            self.clear()
-            for item in items:
-                self.append(item)
+        # Rebuild list
+        self._items.clear()
+        for entry in self._model.visible_entries:
+            self._items.append(entry)
 
-        def _after_rebuild() -> None:
-            self.index = target_list_index
+        if self._items:
+            # Find closest entry to previously highlighted store index and highlight it
+            self.index = self._closest_list_index(store_idx)
 
-        self.call_after_refresh(_after_rebuild)
+            # Scroll to approximately same viewport offset as before
+            self.scroll_to_cursor_offset(offset)
 
-    def _visible_count(self) -> int:
-        return len(self._model.visible_indices)
+        if self.is_mounted:
+            self.refresh()
 
-    @override
-    def action_cursor_down(self) -> None:
-        idx = self.index or 0
-        if idx < self._visible_count() - 1:
-            self.index = idx + 1
+    def _closest_list_index(self, store_idx: int) -> int:
+        if not self._items:
+            return 0
+        indices = [ie.index for ie in self._items]
+        pos = bisect_left(indices, store_idx)
 
-    @override
-    def action_cursor_up(self) -> None:
-        idx = self.index or 0
-        if idx > 0:
-            self.index = idx - 1
+        # store_idx is at or before the first item
+        if pos == 0:
+            return 0
 
-    def action_scroll_half_down(self) -> None:
-        half = max(1, self.size.height // 2)
-        idx = self.index or 0
-        self.index = min(idx + half, self._visible_count() - 1)
+        # store_idx is after all items
+        if pos >= len(indices):
+            return len(indices) - 1
 
-    def action_scroll_half_up(self) -> None:
-        half = max(1, self.size.height // 2)
-        idx = self.index or 0
-        self.index = max(idx - half, 0)
-
-    def action_jump_top(self) -> None:
-        self.index = 0
-
-    def action_jump_bottom(self) -> None:
-        count = self._visible_count()
-        if count > 0:
-            self.index = count - 1
+        # store_idx falls between two items — pick the closer one
+        before = store_idx - indices[pos - 1]
+        after = indices[pos] - store_idx
+        return pos if after < before else pos - 1
 
     def action_toggle_expanded(self) -> None:
         self.set_expanded_mode(not self._expanded_mode)
