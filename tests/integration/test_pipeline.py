@@ -27,8 +27,8 @@ class TestRxPipe:
         pipe = rx.pipe(
             rx.from_async_iterable(lines),
             rx.map(lambda line: parse_line(line)),
-            rx.filter(lambda result: result.is_ok()),
-            rx.map(lambda entry: preprocess_entry(entry.ok)),
+            rx.filter(lambda result: result is not None),
+            rx.map(lambda entry: preprocess_entry(entry)),
         )
 
         results: list[ParsedEntry] = []
@@ -51,8 +51,8 @@ class TestFullPipeline:
                 rx.pipe(
                     rx.from_async_iterable(lines),
                     rx.map(lambda line: parse_line(line)),
-                    rx.filter(lambda result: result.is_ok()),
-                    rx.map(lambda entry: preprocess_entry(entry.ok)),
+                    rx.filter(lambda result: result is not None),
+                    rx.map(lambda entry: preprocess_entry(entry)),
                 ),
                 max_count=100,
                 timeout=0.1,
@@ -80,8 +80,8 @@ class TestFullPipeline:
                 rx.pipe(
                     rx.from_async_iterable(lines),
                     rx.map(lambda line: parse_line(line)),
-                    rx.filter(lambda result: result.is_ok()),
-                    rx.map(lambda entry: preprocess_entry(entry.ok)),
+                    rx.filter(lambda result: result is not None),
+                    rx.map(lambda entry: preprocess_entry(entry)),
                 ),
                 max_count=100,
                 timeout=0.1,
