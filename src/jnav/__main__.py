@@ -69,7 +69,7 @@ async def _run(file: str | None) -> None:
                 rx.filter(lambda result: result is not None),
                 rx.map(lambda entry: preprocess_entry(entry)),
             ),
-            max_count=100,
+            max_count=10000,
             timeout=0.1,
         )
     )
