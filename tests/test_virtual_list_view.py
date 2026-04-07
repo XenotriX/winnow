@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Generic, TypeVar, cast, override
 
 import pytest
+from aioreactive import AsyncSubject
 from rich.console import RenderableType
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -11,19 +12,43 @@ from jnav.virtual_list_view import RenderItemFn, VirtualListView
 T = TypeVar("T")
 
 
+class ListModel(Generic[T]):
+    """Minimal model stub for VirtualListView tests."""
+
+    def __init__(self, items: list[T] | None = None) -> None:
+        self._items: list[T] = list(items or [])
+        self.on_append: AsyncSubject[list[T]] = AsyncSubject()
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def get(self, pos: int) -> T:
+        return self._items[pos]
+
+    def is_empty(self) -> bool:
+        return len(self._items) == 0
+
+    def append(self, item: T) -> None:
+        self._items.append(item)
+
+    @property
+    def visible_indices(self) -> list[int]:
+        return list(range(len(self._items)))
+
+
 def get_visible_items(vl: VirtualListView[T]) -> list[T]:
     height = vl.size.height
     result: list[T] = []
     lines_used = -vl.scroll_line_offset
     for i in range(vl.scroll_top_index, vl.count()):
-        renderable = vl._render_item(vl._items[i], i)  # pyright: ignore[reportPrivateUsage]
+        renderable = vl._render_item(vl._model.get(i), i)  # pyright: ignore[reportPrivateUsage]
         console = vl.app.console
         options = console.options.update_width(vl.size.width)
         lines = 0
         for segment in console.render(renderable, options):
             lines += segment.text.count("\n")
         h = max(lines, 1)
-        result.append(vl._items[i])  # pyright: ignore[reportPrivateUsage]
+        result.append(vl._model.get(i))  # pyright: ignore[reportPrivateUsage]
         lines_used += h
         if lines_used >= height:
             break
@@ -48,20 +73,20 @@ class VirtualListApp(App[None], Generic[T]):
 
     @override
     def compose(self) -> ComposeResult:
+        model = ListModel(self._items)
         vl: VirtualListView[T] = VirtualListView(
+            model=model,  # type: ignore[arg-type]
             render_item=self._render_item,
         )
-        for item in self._items:
-            vl.append(item)
         yield vl
 
 
-def test_append_items():
-    widget: VirtualListView[str] = VirtualListView(render_item=render_str)
-    widget.append("item_a")
-    widget.append("item_b")
-    widget.append("item_c")
-
+def test_model_backed_count():
+    model = ListModel(["a", "b", "c"])
+    widget: VirtualListView[str] = VirtualListView(
+        model=model,  # type: ignore[arg-type]
+        render_item=render_str,
+    )
     assert widget.count() == 3
 
 
@@ -97,7 +122,7 @@ async def test_visible_items_shows_first_n():
 
 
 @pytest.mark.asyncio
-async def test_append_after_mount():
+async def test_append_to_model_after_mount():
     items = ["alpha", "beta"]
     app = VirtualListApp(items)
     async with app.run_test(size=(80, 24)) as pilot:
@@ -105,7 +130,8 @@ async def test_append_after_mount():
         vl = cast(VirtualListView[str], app.query_one(VirtualListView))
         assert vl.count() == 2
 
-        vl.append("gamma")
+        vl._model.append("gamma")  # pyright: ignore[reportPrivateUsage]
+        vl.refresh()
         assert vl.count() == 3
         assert get_visible_items(vl) == ["alpha", "beta", "gamma"]
 
@@ -267,9 +293,11 @@ class SelectedCapture(App[None]):
 
     @override
     def compose(self) -> ComposeResult:
-        vl: VirtualListView[str] = VirtualListView(render_item=render_str)
-        for item in self._items:
-            vl.append(item)
+        model = ListModel(self._items)
+        vl: VirtualListView[str] = VirtualListView(
+            model=model,  # type: ignore[arg-type]
+            render_item=render_str,
+        )
         yield vl
 
     def on_virtual_list_view_selected(
@@ -306,9 +334,11 @@ class HighlightedCapture(App[None]):
 
     @override
     def compose(self) -> ComposeResult:
-        vl: VirtualListView[str] = VirtualListView(render_item=render_str)
-        for item in self._items:
-            vl.append(item)
+        model = ListModel(self._items)
+        vl: VirtualListView[str] = VirtualListView(
+            model=model,  # type: ignore[arg-type]
+            render_item=render_str,
+        )
         yield vl
 
     def on_virtual_list_view_highlighted(

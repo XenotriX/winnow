@@ -68,10 +68,11 @@ class LogListView(VirtualListView[IndexedEntry]):
         id: str | None = None,
     ) -> None:
         super().__init__(
+            model=model,
             render_item=self._render_entry,
             id=id,
         )
-        self._model = model
+        self._log_model = model
         self._fields = fields
         self._search = search
         self._expanded_mode: bool = True
@@ -80,6 +81,8 @@ class LogListView(VirtualListView[IndexedEntry]):
             custom_fields=self._fields.custom_fields_set,
         )
         self._entry_styles: EntryStyles | None = None
+        self._saved_store_idx: int = 0
+        self._saved_offset: int = 0
 
     def _resolve_styles(self) -> EntryStyles:
         base_bg = self.styles.background
@@ -129,9 +132,12 @@ class LogListView(VirtualListView[IndexedEntry]):
             width=self.size.width,
         )
 
+    @override
     async def on_mount(self) -> None:
-        await self._model.on_append.subscribe_async(self._on_append)
-        await self._model.on_rebuild.subscribe_async(self._on_rebuild)
+        await super().on_mount()
+        await self._log_model.on_append.subscribe_async(self._on_append_discover)
+        await self._log_model.on_will_rebuild.subscribe_async(self._on_will_rebuild)
+        await self._log_model.on_rebuild.subscribe_async(self._on_rebuild)
         await self._fields.on_change.subscribe_async(self._on_fields_or_search_changed)
         await self._search.on_change.subscribe_async(self._on_fields_or_search_changed)
 
@@ -157,66 +163,53 @@ class LogListView(VirtualListView[IndexedEntry]):
         return self._expanded_mode
 
     def initial_build(self) -> None:
-        self._fields.discover(self._model.all())
+        self._fields.discover(self._log_model.all())
         self._rebuild()
-        if self._items:
+        if not self._log_model.is_empty():
             self.index = 0
 
     def current_index(self) -> int:
-        visible = self._model.visible_indices
+        visible = self._log_model.visible_indices
         if self.index < len(visible):
             return visible[self.index]
         return 0
 
     def jump_to_index(self, store_idx: int) -> None:
-        visible = self._model.visible_indices
+        visible = self._log_model.visible_indices
         try:
             self.index = visible.index(store_idx)
         except ValueError:
             pass
 
-    async def _on_append(self, new_entries: list[IndexedEntry]) -> None:
-        was_empty = self.count() == 0
-        was_at_bottom = not was_empty and self.index >= self.count() - 1
-
+    async def _on_append_discover(self, new_entries: list[IndexedEntry]) -> None:
         self._fields.discover(new_entries)
-        for ie in new_entries:
-            self.append(ie)
 
-        if was_at_bottom:
-            self.index = self.count() - 1
-        elif was_empty and self._items:
-            self.index = 0
+    async def _on_will_rebuild(self, _: None) -> None:
+        # Snapshot cursor state from the OLD view, before the model rebuilds.
+        if self._log_model.is_empty():
+            self._saved_store_idx = 0
+        else:
+            self._saved_store_idx = self._log_model.get(self.index).index
+        self._saved_offset = self.cursor_viewport_offset()
 
     async def _on_rebuild(self, _: None) -> None:
         self._rebuild()
 
     def _rebuild(self) -> None:
-        # Store index of currently highlighted entry (from old items, not model)
-        store_idx = self._items[self.index].index if self._items else 0
-
-        # Store viewport offset of currently highlighted entry
-        offset = self.cursor_viewport_offset()
-
-        # Rebuild list
-        self._items.clear()
-        for entry in self._model.visible_entries:
-            self._items.append(entry)
-
-        if self._items:
+        if not self._log_model.is_empty():
             # Find closest entry to previously highlighted store index and highlight it
-            self.index = self._closest_list_index(store_idx)
+            self.index = self._closest_list_index(self._saved_store_idx)
 
             # Scroll to approximately same viewport offset as before
-            self.scroll_to_cursor_offset(offset)
+            self.scroll_to_cursor_offset(self._saved_offset)
 
         if self.is_mounted:
             self.refresh()
 
     def _closest_list_index(self, store_idx: int) -> int:
-        if not self._items:
+        indices = self._log_model.visible_indices
+        if not indices:
             return 0
-        indices = [ie.index for ie in self._items]
         pos = bisect_left(indices, store_idx)
 
         # store_idx is at or before the first item

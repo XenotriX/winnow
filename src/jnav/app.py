@@ -236,7 +236,7 @@ class JnavApp(App[None]):
 
     def _update_filter_bar(self) -> None:
         bar = self.query_one("#filter-bar", FilterBar)
-        total = self._model.count()
+        total = self._model.total_count()
         shown = len(self._model.visible_indices)
         n_filters = sum(1 for f in self._filter_provider.get_filters() if f["enabled"])
         n_cols = sum(1 for c in self._fields.custom_fields if c["enabled"])

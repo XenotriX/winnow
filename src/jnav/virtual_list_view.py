@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, TypeVar, override
 
 from rich.console import RenderableType
@@ -7,6 +8,8 @@ from textual.binding import Binding
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
+
+from jnav.model import Model
 
 from .offset_group import OffsetGroup
 from .scrollbar_overlay import ScrollbarOverlay
@@ -88,8 +91,9 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
 
     index: reactive[int] = reactive(0, always_update=True)
 
-    _items: list[T]
+    _model: Model[T]
     _render_item: RenderItemFn[T]
+    _follow: bool
 
     if TYPE_CHECKING:
         app = getters.app(App[None])
@@ -97,14 +101,16 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
     def __init__(
         self,
         *,
+        model: Model[T],
         render_item: RenderItemFn[T],
         id: str | None = None,
     ) -> None:
         super().__init__(id=id)
-        self._items = []
+        self._model = model
         self._scroll_top_index: int = 0
         self._scroll_line_offset: int = 0
         self._render_item = render_item
+        self._follow = False
 
     @property
     def scroll_top_index(self) -> int:
@@ -115,19 +121,19 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
         return self._scroll_line_offset
 
     def validate_index(self, value: int) -> int:
-        if not self._items:
+        if self._model.is_empty():
             return 0
-        return max(0, min(value, len(self._items) - 1))
+        return max(0, min(value, self._model.count() - 1))
 
     def watch_index(self, value: int) -> None:
         self._ensure_cursor_visible()
         self.refresh()
-        if self._items:
-            self.post_message(self.Highlighted(self, value, self._items[value]))
+        if not self._model.is_empty():
+            self.post_message(self.Highlighted(self, value, self._model.get(value)))
 
     def cursor_down(self) -> None:
         """Move the cursor down by one item."""
-        if self.index < len(self._items) - 1:
+        if self.index < self._model.count() - 1:
             self.index += 1
 
     def cursor_up(self) -> None:
@@ -173,7 +179,7 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
     def _move_cursor_half_page(self, direction: Literal["up", "down"]) -> None:
         half = max(1, self.size.height // 2)
         step = 1 if direction == "down" else -1
-        stop = len(self._items) if step == 1 else -1
+        stop = self._model.count() if step == 1 else -1
         lines = 0
         target = self.index
         for i in range(self.index + step, stop, step):
@@ -191,22 +197,32 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
         """Move the cursor up by roughly half a viewport height."""
         self._move_cursor_half_page("up")
 
+    @property
+    def follow(self) -> bool:
+        return self._follow
+
     def action_cursor_down(self) -> None:
+        self._follow = False
         self.cursor_down()
 
     def action_cursor_up(self) -> None:
+        self._follow = False
         self.cursor_up()
 
     def action_scroll_half_down(self) -> None:
+        self._follow = False
         self.scroll_half_down()
 
     def action_scroll_half_up(self) -> None:
+        self._follow = False
         self.scroll_half_up()
 
     def action_jump_top(self) -> None:
+        self._follow = False
         self.index = 0
 
     def action_jump_bottom(self) -> None:
+        self._follow = True
         if self.count() > 0:
             self.index = self.count() - 1
 
@@ -258,21 +274,23 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
         self.refresh()
 
     def on_mouse_scroll_down(self) -> None:
+        self._follow = False
         self._scroll_viewport_down()
 
     def on_mouse_scroll_up(self) -> None:
+        self._follow = False
         self._scroll_viewport_up()
 
     def action_select(self) -> None:
-        if self._items:
-            self.post_message(self.Selected(self, self.index, self._items[self.index]))
+        if not self._model.is_empty():
+            self.post_message(self.Selected(self, self.index, self._model.get(self.index)))
 
     def _render_and_measure(self, index: int) -> int:
-        renderable = self._render_item(self._items[index], index)
+        renderable = self._render_item(self._model.get(index), index)
         return self._measure_height(renderable)
 
     def _ensure_cursor_visible(self) -> None:
-        if not self._items or not self.size.height:
+        if self._model.is_empty() or not self.size.height:
             return
         if self.index < self._scroll_top_index:
             self._scroll_top_index = self.index
@@ -302,19 +320,21 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
     def watch_has_focus(self, _has_focus: bool) -> None:
         self.app.stylesheet.update_nodes([self], animate=True)
 
-    def append(self, item: T) -> None:
-        """Add an item to the end of the list."""
-        self._items.append(item)
-        if self.is_mounted:
-            self.refresh()
+    async def on_mount(self) -> None:
+        await self._model.on_append.subscribe_async(self._on_model_append)
+
+    async def _on_model_append(self, _: Sequence[T]) -> None:
+        if self._follow:
+            self.index = self.count() - 1
+        self.refresh()
 
     def count(self) -> int:
         """Return the total number of items."""
-        return len(self._items)
+        return self._model.count()
 
     def scroll_to_item(self, index: int) -> None:
         """Scroll the viewport so that the item at ``index`` is at the top."""
-        if index < 0 or index >= len(self._items):
+        if index < 0 or index >= self._model.count():
             raise IndexError("Item index out of range")
         self._scroll_top_index = index
         self._scroll_line_offset = 0
@@ -322,14 +342,14 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
 
     @override
     def render(self) -> RenderableType:
-        if not self._items:
+        if self._model.is_empty():
             return ""
         height = self.size.height
         renderables: list[RenderableType] = []
         lines_used = -self._scroll_line_offset
         last_rendered = self._scroll_top_index
-        for i in range(self._scroll_top_index, len(self._items)):
-            item = self._items[i]
+        for i in range(self._scroll_top_index, self._model.count()):
+            item = self._model.get(i)
             renderable = self._render_item(item, i)
             item_height = self._measure_height(renderable)
             renderables.append(renderable)
@@ -342,7 +362,7 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
 
         return ScrollbarOverlay(
             inner,
-            total_items=len(self._items),
+            total_items=self._model.count(),
             visible_count=last_rendered - self._scroll_top_index + 1,
             scroll_position=self._scroll_top_index,
             thumb_style=self.get_component_rich_style(
