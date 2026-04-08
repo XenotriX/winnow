@@ -7,6 +7,7 @@ from rich.padding import Padding
 from rich.style import Style
 from textual.color import Color
 
+from .field_manager import FieldManager
 from .inline_tree import render_inline_tree
 from .log_entry_item import render_summary
 from .search_engine import SearchEngine
@@ -34,10 +35,10 @@ class LogEntryRenderer:
         self,
         *,
         search: SearchEngine,
-        custom_fields: set[str],
+        fields: FieldManager,
     ) -> None:
         self._search = search
-        self.custom_fields = custom_fields
+        self._fields = fields
 
     def render(
         self,
@@ -50,6 +51,7 @@ class LogEntryRenderer:
     ) -> RenderableType:
         text = render_summary(
             ie.entry,
+            self._fields.mapping,
             self._search,
             text_style=styles.text,
             level_styles=styles.levels,
@@ -67,7 +69,7 @@ class LogEntryRenderer:
 
         tree = render_inline_tree(
             ie.entry,
-            custom_fields=self.custom_fields,
+            custom_fields=self._fields.active_fields,
             search=self._search,
             key_style=styles.tree_key,
             selected_style=styles.tree_key_selected,

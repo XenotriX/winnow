@@ -78,7 +78,7 @@ class LogListView(VirtualListView[IndexedEntry]):
         self._expanded_mode: bool = True
         self._renderer = LogEntryRenderer(
             search=search,
-            custom_fields=self._fields.custom_fields_set,
+            fields=fields,
         )
         self._entry_styles: EntryStyles | None = None
         self._saved_store_idx: int = 0
@@ -119,7 +119,6 @@ class LogListView(VirtualListView[IndexedEntry]):
     @override
     def render(self) -> RenderableType:
         self._entry_styles = self._resolve_styles()
-        self._renderer.custom_fields = self._fields.custom_fields_set
         return super().render()
 
     def _render_entry(self, ie: IndexedEntry, index: int) -> RenderableType:
@@ -162,8 +161,8 @@ class LogListView(VirtualListView[IndexedEntry]):
     def expanded_mode(self) -> bool:
         return self._expanded_mode
 
-    def initial_build(self) -> None:
-        self._fields.discover(self._log_model.all())
+    async def initial_build(self) -> None:
+        await self._fields.discover(self._log_model.all())
         self._rebuild()
         if not self._log_model.is_empty():
             self.index = 0
@@ -182,7 +181,7 @@ class LogListView(VirtualListView[IndexedEntry]):
             pass
 
     async def _on_append_discover(self, new_entries: list[IndexedEntry]) -> None:
-        self._fields.discover(new_entries)
+        await self._fields.discover(new_entries)
 
     async def _on_will_rebuild(self, _: None) -> None:
         # Snapshot cursor state from the OLD view, before the model rebuilds.

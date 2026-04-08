@@ -12,6 +12,7 @@ from textual.widgets import Footer, Header, Static
 
 from jnav.field_manager import FieldManager
 from jnav.field_manager_screen import FieldManagerScreen
+from jnav.field_mapping import FieldMapping
 from jnav.filter_manager_screen import FilterManagerScreen
 from jnav.filter_provider import FilterProvider
 from jnav.help_screen import HelpScreen
@@ -187,7 +188,7 @@ class JnavApp(App[None]):
         self.call_after_refresh(self._initial_build)
 
     async def _initial_build(self) -> None:
-        self.query_one("#log-list", LogListView).initial_build()
+        await self.query_one("#log-list", LogListView).initial_build()
         self._update_filter_bar()
 
     async def _load_state(self) -> None:
@@ -199,6 +200,7 @@ class JnavApp(App[None]):
             return
         await self._filter_provider.set_filters(state.get("filters", []))
         await self._fields.set_custom_fields(state.get("custom_fields", []))
+        await self._fields.set_mapping(state.get("field_mapping"))
         self._expanded_mode = state.get("expanded_mode", False)
         await self._model.set_filtering_enabled(not state.get("filters_paused", False))
         await self._search.set_term(state.get("search_term", ""))
@@ -214,6 +216,7 @@ class JnavApp(App[None]):
         state = {
             "filters": self._filter_provider.get_filters(),
             "custom_fields": self._fields.custom_fields,
+            "field_mapping": self._fields.mapping.model_dump(),
             "expanded_mode": lv.expanded_mode,
             "filters_paused": self._model.filtering_enabled is False,
             "search_term": self._search.term,

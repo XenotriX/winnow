@@ -145,7 +145,7 @@ class DetailTree(Tree[TreeNodeData]):
         if self._entry is None:
             return
         entry = self._entry.expanded
-        selected = resolve_selected_paths(self._fields.custom_fields_set, entry)
+        selected = resolve_selected_paths(self._fields.active_fields, entry)
 
         ts_val = None
         for ts_key in TS_KEYS:
