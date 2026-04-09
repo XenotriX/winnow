@@ -89,7 +89,7 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
         Binding("enter", "select"),
     ]
 
-    index: reactive[int] = reactive(0, always_update=True)
+    index: reactive[int] = reactive(-1, always_update=True)
 
     _model: Model[T]
     _render_item: RenderItemFn[T]
@@ -321,11 +321,15 @@ class VirtualListView(Widget, Generic[T], can_focus=True):
         self.app.stylesheet.update_nodes([self], animate=True)
 
     async def on_mount(self) -> None:
+        if self.index < 0 and not self._model.is_empty():
+            self.index = 0
         await self._model.on_append.subscribe_async(self._on_model_append)
 
     async def _on_model_append(self, _: Sequence[T]) -> None:
         if self._follow:
             self.index = self.count() - 1
+        elif self.index < 0 and not self._model.is_empty():
+            self.index = 0
         self.refresh()
 
     def count(self) -> int:
