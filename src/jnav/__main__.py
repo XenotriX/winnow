@@ -93,6 +93,7 @@ async def _run(file: str | None, follow: bool) -> None:
 @click.command()
 @click.argument("file", required=False, type=click.Path(exists=True))
 @click.option("--follow", "-f", is_flag=True, help="Follow the file for new entries")
+@click.version_option()
 def main(file: str | None, follow: bool) -> None:
     """Interactive JSON log viewer with jq filtering."""
     init_logging()
