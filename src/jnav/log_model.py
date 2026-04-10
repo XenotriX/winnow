@@ -3,7 +3,7 @@ import aioreactive as rx
 from aioreactive import AsyncSubject, pipe
 
 from jnav.filter_provider import FilterProvider
-from jnav.filtering import apply_combined_filters
+from jnav.filtering import apply_filter_tree
 from jnav.store import IndexedEntry, Store
 from jnav.model import Model
 
@@ -52,17 +52,17 @@ class LogModel(Model[IndexedEntry]):
     def _apply_filters(self, indexed_entry: IndexedEntry) -> bool:
         if not self._filtering_enabled:
             return True
-        filters = self._filter_provider.get_filters()
-        matched, error = apply_combined_filters(filters, [indexed_entry.entry.expanded])
+        root = self._filter_provider.root
+        matched, error = apply_filter_tree(root, [indexed_entry.entry.expanded])
         return error is not None or len(matched) > 0
 
     def _rebuild_view(self) -> None:
         if not self._filtering_enabled:
             self._view = list(range(len(self._store)))
         else:
-            filters = self._filter_provider.get_filters()
+            root = self._filter_provider.root
             entries = [e.entry.expanded for e in self._store.all()]
-            matched, _error = apply_combined_filters(filters, entries)
+            matched, _error = apply_filter_tree(root, entries)
             self._view = matched
 
     def total_count(self) -> int:

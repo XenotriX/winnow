@@ -57,7 +57,7 @@ class FieldManager:
         self._mapping = self._mapping.model_copy(update=updates)
         await self.on_change.asend(None)
 
-    async def set_mapping(self, mapping_data: dict[str, Any] | None) -> None:
+    async def set_mapping(self, mapping_data: dict[str, Any] | FieldMapping | None) -> None:
         if mapping_data:
             self._mapping = FieldMapping.model_validate(mapping_data)
         else:

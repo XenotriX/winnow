@@ -18,7 +18,7 @@ from jnav.filter_provider import FilterProvider
 from jnav.help_screen import HelpScreen
 from jnav.log_model import LogModel
 from jnav.search_engine import SearchEngine
-from jnav.search_input_screen import SearchInputScreen
+from jnav.text_input_screen import TextInputScreen
 from jnav.virtual_list_view import VirtualListView
 
 from .detail_tree import DetailTree
@@ -201,7 +201,8 @@ class JnavApp(App[None]):
             state = json.loads(self._state_file.read_text())
         except json.JSONDecodeError, OSError:
             return
-        await self._filter_provider.set_filters(state.get("filters", []))
+        if "filter_tree" in state:
+            await self._filter_provider.load_root(state["filter_tree"])
         await self._fields.set_custom_fields(state.get("custom_fields", []))
         await self._fields.set_mapping(state.get("field_mapping"))
         self._expanded_mode = state.get("expanded_mode", False)
@@ -217,7 +218,7 @@ class JnavApp(App[None]):
         panel = self.query_one("#detail-panel")
         lv = self.query_one("#log-list", LogListView)
         state = {
-            "filters": self._filter_provider.get_filters(),
+            "filter_tree": self._filter_provider.dump_root(),
             "custom_fields": self._fields.custom_fields,
             "field_mapping": self._fields.mapping.model_dump(),
             "expanded_mode": lv.expanded_mode,
@@ -244,23 +245,15 @@ class JnavApp(App[None]):
         bar = self.query_one("#filter-bar", FilterBar)
         total = self._model.total_count()
         shown = len(self._model.visible_indices)
-        n_filters = sum(1 for f in self._filter_provider.get_filters() if f["enabled"])
+        has_filters = bool(self._filter_provider.root.children)
         n_cols = sum(1 for c in self._fields.custom_fields if c["enabled"])
 
-        n_or = sum(
-            1
-            for f in self._filter_provider.get_filters()
-            if f["enabled"] and f.get("combine") == "or"
-        )
-
         parts: list[str] = [f"Showing {shown}/{total}"]
-        if n_filters:
-            filter_text = f"{n_filters} filter{'s' if n_filters != 1 else ''}"
-            if n_or:
-                filter_text += f" ({n_or} OR)"
-            if not self._model.filtering_enabled:
-                filter_text += " PAUSED"
-            parts.append(filter_text)
+        if has_filters:
+            if self._model.filtering_enabled:
+                parts.append("filtered")
+            else:
+                parts.append("filters paused")
         if n_cols:
             parts.append(f"{n_cols} field{'s' if n_cols != 1 else ''}")
         if self._search.term:
@@ -298,7 +291,7 @@ class JnavApp(App[None]):
             else:
                 self.notify("No matches found", timeout=2)
 
-        self.push_screen(SearchInputScreen(), on_dismiss)
+        self.push_screen(TextInputScreen(), on_dismiss)
 
     def action_search_next(self) -> None:
         if not self._search.matches:
@@ -332,7 +325,7 @@ class JnavApp(App[None]):
                 expr = text_search_expr(term)
                 await self._filter_provider.add_filter(expr, label=f"text: {term}")
 
-        self.push_screen(SearchInputScreen("Text Filter (AND)"), on_dismiss)
+        self.push_screen(TextInputScreen("Text Filter (AND)"), on_dismiss)
 
     def action_text_filter_or(self) -> None:
         async def on_dismiss(term: str | None) -> None:
@@ -342,7 +335,7 @@ class JnavApp(App[None]):
                     expr, label=f"text: {term}", combine="or"
                 )
 
-        self.push_screen(SearchInputScreen("Text Filter (OR)"), on_dismiss)
+        self.push_screen(TextInputScreen("Text Filter (OR)"), on_dismiss)
 
     def action_toggle_detail(self) -> None:
         panel = self.query_one("#detail-panel")
@@ -382,7 +375,7 @@ class JnavApp(App[None]):
             self.query_one("#detail-tree", DetailTree).focus()
 
     async def action_toggle_filters_pause(self) -> None:
-        if not self._filter_provider.get_filters():
+        if not self._filter_provider.root.children:
             return
         await self._model.set_filtering_enabled(not self._model.filtering_enabled)
         state = "active" if self._model.filtering_enabled else "paused"

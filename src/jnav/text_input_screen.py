@@ -7,12 +7,12 @@ from textual.screen import ModalScreen
 from textual.widgets import Input
 
 
-class SearchInputScreen(ModalScreen[str | None]):
+class TextInputScreen(ModalScreen[str | None]):
     DEFAULT_CSS = """
-    SearchInputScreen {
+    TextInputScreen {
         align: center middle;
     }
-    #search-modal {
+    #text-input-modal {
         width: 50;
         max-width: 90%;
         height: auto;
@@ -27,24 +27,31 @@ class SearchInputScreen(ModalScreen[str | None]):
     ]
 
     def __init__(
-        self, title: str = "Search", placeholder: str = "search term..."
+        self,
+        title: str = "Search",
+        placeholder: str = "search term...",
+        initial_value: str = "",
     ) -> None:
         super().__init__()
         self._title = title
         self._placeholder = placeholder
+        self._initial_value = initial_value
 
     @override
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Input(placeholder=self._placeholder, id="search-input"),
-            id="search-modal",
+            Input(placeholder=self._placeholder, id="text-input"),
+            id="text-input-modal",
         )
 
     def on_mount(self) -> None:
-        self.query_one("#search-modal").border_title = self._title
-        self.query_one("#search-input", Input).focus()
+        self.query_one("#text-input-modal").border_title = self._title
+        inp = self.query_one("#text-input", Input)
+        if self._initial_value:
+            inp.value = self._initial_value
+        inp.focus()
 
-    @on(Input.Submitted, "#search-input")
+    @on(Input.Submitted, "#text-input")
     def on_submitted(self, event: Input.Submitted) -> None:
         term = event.value.strip()
         self.dismiss(term if term else None)

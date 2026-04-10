@@ -1,16 +1,35 @@
+from __future__ import annotations
+
 import functools
 import json
 import re
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal
 
 import jq
+from pydantic import BaseModel, Discriminator, Field
 
 
-class Filter(TypedDict):
+class Filter(BaseModel):
+    type: Literal["leaf"] = "leaf"
     expr: str
-    enabled: bool
-    combine: Literal["and", "or"]
-    label: NotRequired[str]
+    enabled: bool = True
+    negated: bool = False
+    label: str | None = None
+
+
+class FilterGroup(BaseModel):
+    type: Literal["group"] = "group"
+    operator: Literal["and", "or"] = "and"
+    enabled: bool = True
+    negated: bool = False
+    label: str | None = None
+    collapsed: bool = False
+    children: list[FilterNode] = Field(default_factory=list)
+
+
+FilterNode = Annotated[Filter | FilterGroup, Discriminator("type")]
+
+FilterGroup.model_rebuild()
 
 
 @functools.lru_cache(maxsize=32)
@@ -37,31 +56,55 @@ def apply_jq_filter(
     return matched, None
 
 
-def build_combined_expression(filters: list[Filter]) -> str | None:
-    """Build a single jq expression from the enabled filters, or None if empty."""
-    enabled = [f for f in filters if f["enabled"]]
-    if not enabled:
+def build_expression(node: FilterNode) -> str | None:
+    """Recursively build a jq expression from a filter tree.
+
+    Returns None if the node is disabled or has no effective children.
+    """
+    if not node.enabled:
         return None
-    and_exprs = [f["expr"] for f in enabled if f.get("combine", "and") == "and"]
-    or_exprs = [f["expr"] for f in enabled if f.get("combine") == "or"]
-    parts: list[str] = []
-    if and_exprs:
-        parts.append(" and ".join(and_exprs))
-    if or_exprs:
-        parts.append(" or ".join(or_exprs))
-    if not parts:
+
+    if isinstance(node, Filter):
+        expr = node.expr
+        if node.negated:
+            expr = f"{expr} | not"
+        return expr
+
+    child_exprs: list[tuple[str, FilterNode]] = []
+    for child in node.children:
+        child_expr = build_expression(child)
+        if child_expr is not None:
+            child_exprs.append((child_expr, child))
+
+    if not child_exprs:
         return None
-    if len(parts) == 1:
-        return parts[0]
-    return " or ".join(f"({p})" if " " in p else p for p in parts)
+
+    if len(child_exprs) == 1:
+        result = child_exprs[0][0]
+    else:
+        joiner = f" {node.operator} "
+        wrapped = []
+        for expr, child in child_exprs:
+            needs_parens = "|" in expr or (
+                isinstance(child, FilterGroup)
+                and len(child.children) > 1
+                and child.operator != node.operator
+            )
+            wrapped.append(f"({expr})" if needs_parens else expr)
+        result = joiner.join(wrapped)
+
+    if node.negated:
+        result = f"({result}) | not"
+
+    return result
 
 
-def apply_combined_filters(
-    filters: list[Filter],
+def apply_filter_tree(
+    root: FilterGroup,
     entries: list[dict[str, Any]],
 ) -> tuple[list[int], str | None]:
-    """Apply all enabled filters (AND group unioned with OR group)."""
-    combined = build_combined_expression(filters)
+    """Apply a filter tree to a list of entries."""
+    combined = build_expression(root)
     if combined is None:
         return list(range(len(entries))), None
     return apply_jq_filter(combined, entries)

@@ -225,6 +225,7 @@ class TestSearchEngineMatches:
     async def test_matches_include_filtered_out_entries(self, env: Env) -> None:
         """Matches are store indices, independent of visible_indices."""
         store, model, search = env
+        del model  # unused
         await store.append_entries(
             [
                 make_entry(_entry("INFO", "hello")),
