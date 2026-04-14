@@ -4,7 +4,6 @@ from rich.style import Style
 from rich.text import Text
 
 from .field_mapping import FieldMapping, TimestampFormat
-from .filtering import get_nested
 from .parsing import ParsedEntry
 from .search_engine import SearchEngine
 from .tree_rendering import highlight_text
@@ -70,13 +69,13 @@ def render_summary(
     parts: list[str | tuple[str, str | Style]] = [" "]
 
     if mapping.timestamp is not None:
-        ts_val = get_nested(parsed.expanded, mapping.timestamp.path)
+        ts_val = parsed.expanded.get(mapping.timestamp.path)
         if ts_val not in (None, ""):
             parts.append((format_timestamp(ts_val, mapping.timestamp.format), _ts))
             parts.append(" ")
 
     if mapping.level is not None:
-        level_val = get_nested(parsed.expanded, mapping.level)
+        level_val = parsed.expanded.get(mapping.level)
         level_str = str(level_val) if level_val else ""
         if level_str:
             component = LEVEL_COMPONENTS.get(level_str.strip().lower())
@@ -88,7 +87,7 @@ def render_summary(
             parts.append(" ")
 
     if mapping.message is not None:
-        msg_val = get_nested(parsed.expanded, mapping.message)
+        msg_val = parsed.expanded.get(mapping.message)
         msg_str = str(msg_val) if msg_val or msg_val == 0 else ""
         parts.append((msg_str, _ts))
 

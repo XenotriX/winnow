@@ -131,8 +131,7 @@ def _is_truthy(value: object) -> bool:
 
 
 def get_nested(entry: dict[str, Any], path: str) -> object:
-    jq_path = path if path.startswith(".") else "." + path
-    wrapped = f"[{jq_path}]" if "[]" in path else jq_path
+    wrapped = f"[{path}]" if "[]" in path else path
     try:
         prog = _compile_jq(wrapped)
         return prog.input_value(entry).first()
@@ -167,9 +166,9 @@ def resolve_selected_paths(columns: set[str], entry: dict[str, Any]) -> set[str]
     result: set[str] = set()
     for col in columns:
         if "[]" not in col and "|" not in col:
-            result.add(col)
+            result.add(col.lstrip("."))
             continue
-        jq_path = "." + col if not col.startswith(".") else col
+        jq_path = col
         try:
             raw = jq.compile(f"[path({jq_path})]").input_value(entry).first()
             for parts in raw:

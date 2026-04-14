@@ -143,7 +143,7 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
 
         ts_val = None
         for ts_key in TS_KEYS:
-            ts_val = get_nested(entry, ts_key)
+            ts_val = entry.get(ts_key)
             if ts_val:
                 break
         label = f"#{self._entry_index + 1}"
@@ -215,11 +215,11 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
         node = self.cursor_node
         if node is None or node.data is None:
             return
-        path = node.data["path"]
-        if self._selectors.has_selector(path):
-            await self._selectors.remove_selector_by_path(path)
+        selector = "." + node.data["path"]
+        if self._selectors.has_selector(selector):
+            await self._selectors.remove_selector_by_path(selector)
         else:
-            await self._selectors.add_selector(path)
+            await self._selectors.add_selector(selector)
 
     def action_view_value(self) -> None:
         node = self.cursor_node
