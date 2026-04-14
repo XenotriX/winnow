@@ -23,15 +23,20 @@ class TestSelectorMutations:
         assert len(events) == 1
 
     @pytest.mark.asyncio
-    async def test_add_duplicate_is_noop(self, sp: SelectorProvider) -> None:
+    async def test_add_duplicate_is_allowed(self, sp: SelectorProvider) -> None:
+        await sp.add_selector("data.role")
         await sp.add_selector("data.role")
 
-        events, collect = make_signal_collector()
-        await sp.on_change.subscribe_async(collect)
-        await sp.add_selector("data.role")
+        assert len(sp.selectors) == 2
 
-        assert len(sp.selectors) == 1
-        assert len(events) == 0
+    @pytest.mark.asyncio
+    async def test_insert_selector(self, sp: SelectorProvider) -> None:
+        await sp.add_selector("a")
+        await sp.add_selector("c")
+
+        await sp.insert_selector(1, "b")
+
+        assert [s["path"] for s in sp.selectors] == ["a", "b", "c"]
 
     @pytest.mark.asyncio
     async def test_toggle_selector(self, sp: SelectorProvider) -> None:

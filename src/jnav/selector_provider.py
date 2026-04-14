@@ -29,9 +29,11 @@ class SelectorProvider:
         return any(s["path"] == path for s in self._selectors)
 
     async def add_selector(self, path: str) -> None:
-        if self.has_selector(path):
-            return
         self._selectors.append({"path": path, "enabled": True})
+        await self.on_change.asend(None)
+
+    async def insert_selector(self, index: int, path: str) -> None:
+        self._selectors.insert(index, {"path": path, "enabled": True})
         await self.on_change.asend(None)
 
     async def remove_selector(self, index: int) -> None:
