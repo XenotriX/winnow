@@ -1,10 +1,8 @@
 from collections.abc import Callable
-from typing import Any, Generic, Protocol, TypeVar, cast
+from typing import Any, Protocol, cast
 
 from rich.style import Style
 from rich.text import Text
-
-T = TypeVar("T")
 
 PRIORITY_KEYS = ("timestamp", "ts", "time", "level", "severity", "message", "msg")
 
@@ -63,7 +61,7 @@ def highlight_text(
     return text
 
 
-class TreeBuildVisitor(Generic[T]):
+class TreeBuildVisitor[T]:
     def __init__(
         self,
         *,

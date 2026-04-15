@@ -1,12 +1,10 @@
 from collections.abc import Sequence
-from typing import Generic, Protocol, TypeVar
+from typing import Protocol
 
 from aioreactive import AsyncObservable
 
-T = TypeVar("T", covariant=True)
 
-
-class Model(Protocol, Generic[T]):
+class Model[T](Protocol):
     @property
     def on_append(self) -> AsyncObservable[Sequence[T]]: ...
 

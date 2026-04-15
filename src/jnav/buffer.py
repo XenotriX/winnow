@@ -1,13 +1,10 @@
 import asyncio
 from collections.abc import AsyncIterable
-from typing import TypeVar
 
 from aioreactive import AsyncObservable, to_async_iterable
 
-T = TypeVar("T")
 
-
-async def buffer_time_or_count(
+async def buffer_time_or_count[T](
     source: AsyncObservable[T],
     max_count: int = 500,
     timeout: float = 0.1,

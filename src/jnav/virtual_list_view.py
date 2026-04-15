@@ -1,5 +1,5 @@
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, override
+from typing import TYPE_CHECKING, Any, Literal, override
 
 from rich.console import RenderableType
 from textual import getters
@@ -14,12 +14,10 @@ from jnav.model import Model
 from .offset_group import OffsetGroup
 from .scrollbar_overlay import ScrollbarOverlay
 
-T = TypeVar("T")
-
-RenderItemFn = Callable[[T, int], RenderableType]
+type RenderItemFn[T] = Callable[[T, int], RenderableType]
 
 
-class VirtualListView(Widget, Generic[T], can_focus=True):
+class VirtualListView[T](Widget, can_focus=True):
     """A virtualized list that renders only visible items.
 
     Instead of creating a widget per item (like Textual's ListView), this widget

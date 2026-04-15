@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Generic, TypeVar, cast, override
+from typing import cast, override
 
 import pytest
 from aioreactive import AsyncSubject
@@ -9,10 +9,8 @@ from textual.app import App, ComposeResult
 
 from jnav.virtual_list_view import RenderItemFn, VirtualListView
 
-T = TypeVar("T")
 
-
-class ListModel(Generic[T]):
+class ListModel[T]:
     """Minimal model stub for VirtualListView tests."""
 
     def __init__(self, items: list[T] | None = None) -> None:
@@ -36,7 +34,7 @@ class ListModel(Generic[T]):
         return list(range(len(self._items)))
 
 
-def get_visible_items(vl: VirtualListView[T]) -> list[T]:
+def get_visible_items[T](vl: VirtualListView[T]) -> list[T]:
     height = vl.size.height
     result: list[T] = []
     lines_used = -vl.scroll_line_offset
@@ -60,7 +58,7 @@ def render_str(item: str, index: int) -> RenderableType:
     return Text(item, no_wrap=True)
 
 
-class VirtualListApp(App[None], Generic[T]):
+class VirtualListApp[T](App[None]):
     def __init__(
         self,
         items: list[T],
