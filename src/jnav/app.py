@@ -33,6 +33,8 @@ class FilterBar(Static):
 
 
 class JnavApp(App[None]):
+    ENABLE_COMMAND_PALETTE = False
+
     CSS = """
     * {
         scrollbar-size-vertical: 1;
