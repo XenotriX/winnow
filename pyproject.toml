@@ -38,6 +38,9 @@ filterwarnings = [
 [tool.ruff]
 preview = true
 
+[tool.coverage.run]
+source = ["src/jnav"]
+
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.0",
