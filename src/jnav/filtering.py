@@ -1,6 +1,8 @@
 import functools
 import json
+import math
 import re
+from collections.abc import Sequence
 from typing import Annotated, Any, Literal, cast
 
 import jq
@@ -114,21 +116,24 @@ def text_search_expr(term: str) -> str:
 
 
 _ASSIGNMENT_RE = re.compile(r"(?<![=!<>])=(?!=)")
+_STRING_LITERAL_RE = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"')
 
 
 def check_filter_warning(expression: str) -> str | None:
-    if _ASSIGNMENT_RE.search(expression):
-        return "Did you mean '==' instead of '='? ('=' is jq's update operator)"
+    without_strings = _STRING_LITERAL_RE.sub('""', expression)
+    if _ASSIGNMENT_RE.search(without_strings):
+        return "jq update operators don't filter — did you mean a comparison like '=='?"
     return None
 
 
 def get_nested(entry: dict[str, Any], path: str) -> object:
-    wrapped = f"[{path}]" if "[]" in path else path
     try:
-        prog = _compile_jq(wrapped)
-        return prog.input_value(entry).first()
+        results = _compile_jq(path).input_value(entry).all()
     except ValueError:
         return None
+    if len(results) == 1:
+        return results[0]
+    return results
 
 
 def jq_value_literal(value: object) -> str:
@@ -139,11 +144,13 @@ def jq_value_literal(value: object) -> str:
     if value is None:
         return "null"
     if isinstance(value, (int, float)):
+        if not math.isfinite(value):
+            raise ValueError(f"jq does not support {value!r}")
         return str(value)
     return json.dumps(value)
 
 
-def _jq_path_to_str(parts: list[str | int]) -> str:
+def _jq_path_to_str(parts: Sequence[str | int]) -> str:
     result = ""
     for p in parts:
         if isinstance(p, int):
