@@ -236,5 +236,5 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
             f.write(content)
             path = f.name
         with self.app.suspend():
-            subprocess.run([editor, path])
+            subprocess.run([editor, path], check=False)
         os.unlink(path)

@@ -49,7 +49,7 @@ def apply_jq_filter(
             results = prog.input_value(entry).all()
             if any(_is_truthy(r) for r in results):
                 matched.append(i)
-        except Exception:
+        except ValueError:
             continue
     return matched, None
 
@@ -125,9 +125,7 @@ def check_filter_warning(expression: str) -> str | None:
 def _is_truthy(value: object) -> bool:
     if value is None or value is False:
         return False
-    if isinstance(value, (list, dict, str)) and len(value) == 0:
-        return False
-    return True
+    return not (isinstance(value, (list, dict, str)) and len(value) == 0)
 
 
 def get_nested(entry: dict[str, Any], path: str) -> object:
@@ -135,7 +133,7 @@ def get_nested(entry: dict[str, Any], path: str) -> object:
     try:
         prog = _compile_jq(wrapped)
         return prog.input_value(entry).first()
-    except Exception:
+    except ValueError:
         return None
 
 
@@ -174,7 +172,7 @@ def resolve_selected_paths(columns: set[str], entry: dict[str, Any]) -> set[str]
             for parts in raw:
                 result.add(_jq_path_to_str(parts))
             continue
-        except Exception:
+        except ValueError:
             pass
         try:
             results = jq.compile(jq_path).input_value(entry).all()
@@ -186,6 +184,6 @@ def resolve_selected_paths(columns: set[str], entry: dict[str, Any]) -> set[str]
                     if isinstance(r, dict):
                         for key in r:
                             result.add(f"{base}.{key}")
-        except Exception:
+        except ValueError:
             result.add(col)
     return result

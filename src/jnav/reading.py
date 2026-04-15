@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def read_file(path: str, *, tail: bool = True) -> AsyncIterator[str]:
     """Yield lines from a file, optionally tailing for new content at EOF."""
-    with open(path, mode="r", errors="replace") as f:
+    with open(path, mode="r", errors="replace") as f:  # noqa: ASYNC230
         while True:
             line = f.readline()
 
@@ -42,7 +42,7 @@ def setup_stdin_pipe() -> BufferedReader:
     pipe = os.fdopen(os.dup(sys.stdin.fileno()), "rb")
     sys.stdin.close()
     try:
-        tty = open("/dev/tty")
+        tty = open("/dev/tty")  # noqa: SIM115 — replaces sys.stdin, must outlive this function
     except OSError:
         pipe.close()
         raise
