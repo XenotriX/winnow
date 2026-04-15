@@ -9,5 +9,7 @@ pre-commit:
       glob: "*.py"
       run: uv run ruff check --fix {staged_files}
       stage_fixed: true
+    typecheck:
+      run: uv run basedpyright src/ tests/
     test:
       run: uv run pytest
