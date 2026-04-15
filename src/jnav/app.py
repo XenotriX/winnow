@@ -48,6 +48,8 @@ class JnavApp(App[None]):
     ModalScreen {
         background: $background 80%;
     }
+    HeaderIcon { display: none; }
+    Header.-tall { height: 1; }
     FooterKey {
         margin: 0 1 0 0;
     }
