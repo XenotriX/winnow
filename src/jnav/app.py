@@ -277,15 +277,9 @@ class JnavApp(App[None]):
         bar = self.query_one("#filter-bar", FilterBar)
         total = self._model.total_count()
         shown = len(self._model.visible_indices)
-        has_filters = bool(self._filter_provider.root.children)
         n_cols = sum(1 for s in self._selectors.selectors if s["enabled"])
 
         parts: list[str] = [f"Showing {shown}/{total}"]
-        if has_filters:
-            if self._model.filtering_enabled:
-                parts.append("filtered")
-            else:
-                parts.append("filters paused")
         if n_cols:
             parts.append(f"{n_cols} field{'s' if n_cols != 1 else ''}")
         if self._search.term:
