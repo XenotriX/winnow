@@ -3,7 +3,6 @@ from typing import ClassVar, override
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input
 
@@ -13,13 +12,18 @@ class TextInputScreen(ModalScreen[str | None]):
     TextInputScreen {
         align: center middle;
     }
-    #text-input-modal {
+    #text-input {
         width: 50;
         max-width: 90%;
-        height: auto;
-        border: round $surface-lighten-2;
-        background: $surface;
-        padding: 1 2;
+        height: 3;
+        border: round $primary;
+        background: $background;
+        padding: 0 2;
+        margin: 0;
+
+        &:focus {
+            background-tint: transparent;
+        }
     }
     """
 
@@ -41,13 +45,10 @@ class TextInputScreen(ModalScreen[str | None]):
 
     @override
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Input(placeholder=self._placeholder, id="text-input"),
-            id="text-input-modal",
-        )
+        yield Input(placeholder=self._placeholder, id="text-input")
 
     def on_mount(self) -> None:
-        self.query_one("#text-input-modal").border_title = self._title
+        self.query_one("#text-input").border_title = self._title
         inp = self.query_one("#text-input", Input)
         if self._initial_value:
             inp.value = self._initial_value

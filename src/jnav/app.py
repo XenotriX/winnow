@@ -44,18 +44,26 @@ class JnavApp(App[None]):
         scrollbar-color-active: $foreground-darken-2;
         scrollbar-background: $surface;
         scrollbar-background-hover: $surface;
-        border-title-color: $accent;
+        border-title-color: $primary;
     }
     ModalScreen {
-        background: $background 80%;
+        background: $background 0%;
     }
     HeaderIcon { display: none; }
     Header.-tall { height: 1; }
+    Footer {
+        background: $surface;
+    }
     FooterKey {
         margin: 0 1 0 0;
+        background: $surface;
+    }
+    FooterKey .footer-key--key {
+        color: $primary;
+        background: $surface;
     }
     .tree--key { color: $primary; text-style: italic; }
-    .tree--key-selected { color: $primary; text-style: bold underline; }
+    .tree--key-selected { color: $primary; text-style: bold; }
     .tree--value { color: $foreground; }
     .tree--value-null { color: $foreground; text-style: dim italic; }
     .tree--json-string { color: $warning; text-style: italic; }
@@ -68,7 +76,7 @@ class JnavApp(App[None]):
         height: 1;
         padding: 0 1;
         color: $text-muted;
-        background: $surface;
+        background: $background;
     }
     #log-panel {
         opacity: 0.75;
@@ -77,22 +85,31 @@ class JnavApp(App[None]):
         opacity: 1.0;
     }
     #log-panel.focused > #filter-bar {
-        color: $accent;
+        color: $primary;
     }
     #log-list:focus {
         background-tint: transparent;
     }
     #detail-panel {
         width: 40%;
-        border: round $surface-lighten-2;
+        border: round $background-lighten-2;
         border-title-align: center;
-        background: $surface;
+        background: $background;
     }
     #detail-panel.focused {
-        border: round $accent;
+        border: round $primary;
+    }
+    #detail-tree {
+        background: $background;
     }
     #detail-tree:focus {
         background-tint: transparent;
+    }
+    #detail-tree > .tree--guides {
+        color: $background-lighten-2;
+    }
+    #detail-tree > .tree--guides-selected {
+        color: $foreground;
     }
     """
 
@@ -127,11 +144,14 @@ class JnavApp(App[None]):
         self.register_theme(
             Theme(
                 name="jnav",
-                primary="#0178D4",
-                accent="#61AFEF",
-                error="#ba3c5b",
-                warning="#ffa62b",
-                success="#4EBF71",
+                primary="#339af0",
+                accent="#20c997",
+                error="#ff6b6b",
+                warning="#ff922b",
+                success="#20c997",
+                surface="#15191d",
+                background="#212529",
+                foreground="#f8fafb",
                 dark=True,
             )
         )

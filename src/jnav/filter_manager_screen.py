@@ -21,13 +21,13 @@ class FilterManagerScreen(ModalScreen[bool]):
         max-width: 90%;
         height: auto;
         max-height: 70%;
-        border: round $surface-lighten-2;
-        background: $surface;
+        border: round $primary;
+        background: $background;
         padding: 1 2;
     }
     #filter-expression {
-        color: $accent;
-        background: $surface-lighten-1;
+        color: $primary;
+        background: $surface;
         margin: 1 0 0 0;
         padding: 0 1;
         height: auto;
