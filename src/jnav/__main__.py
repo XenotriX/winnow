@@ -8,6 +8,7 @@ from typing import cast
 
 import aioreactive as rx
 import click
+from platformdirs import user_data_dir
 
 from jnav.filter_provider import FilterProvider
 from jnav.log_model import LogModel
@@ -24,7 +25,7 @@ from .reading import read_file, read_pipe, setup_stdin_pipe
 
 logging.getLogger("aioreactive").setLevel(logging.WARNING)
 
-_STATE_DIR = Path.home() / ".local" / "share" / "jnav"
+_STATE_DIR = Path(user_data_dir("jnav"))
 
 
 def _state_file_for(file_path: str) -> Path:

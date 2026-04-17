@@ -12,6 +12,7 @@ dependencies = [
     "aioreactive>=0.20.0",
     "orjson>=3.11.8",
     "pydantic>=2.12.5",
+    "platformdirs>=4.0.0",
 ]
 
 [project.scripts]
