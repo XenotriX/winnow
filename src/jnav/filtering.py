@@ -122,7 +122,7 @@ _STRING_LITERAL_RE = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"')
 def check_filter_warning(expression: str) -> str | None:
     without_strings = _STRING_LITERAL_RE.sub('""', expression)
     if _ASSIGNMENT_RE.search(without_strings):
-        return "jq update operators don't filter — did you mean a comparison like '=='?"
+        return "jq update operators don't filter. Did you mean a comparison like '=='?"
     return None
 
 

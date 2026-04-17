@@ -42,7 +42,7 @@ def setup_stdin_pipe() -> BufferedReader:
     pipe = os.fdopen(os.dup(sys.stdin.fileno()), "rb")
     sys.stdin.close()
     try:
-        tty = open("/dev/tty")  # noqa: SIM115 — replaces sys.stdin, must outlive this function
+        tty = open("/dev/tty")  # noqa: SIM115, replaces sys.stdin, must outlive this function
     except OSError:
         pipe.close()
         raise

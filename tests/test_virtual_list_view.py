@@ -515,7 +515,7 @@ async def test_scroll_viewport_down_clamps_at_bottom():
         await pilot.pause()
         vl = cast(VirtualListView[str], app.query_one(VirtualListView))
 
-        # Only 5 items, all fit in viewport — scroll should be no-op
+        # Only 5 items, all fit in viewport, so scroll should be no-op
         vl.on_mouse_scroll_down()
         assert vl.scroll_top_index == 0
         assert vl.scroll_line_offset == 0

@@ -251,7 +251,7 @@ class LogListView(KeySequenceMixin, VirtualListView[IndexedEntry]):
         if pos >= len(indices):
             return len(indices) - 1
 
-        # store_idx falls between two items — pick the closer one
+        # store_idx falls between two items; pick the closer one
         before = store_idx - indices[pos - 1]
         after = indices[pos] - store_idx
         return pos if after < before else pos - 1
