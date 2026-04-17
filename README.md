@@ -13,7 +13,13 @@ Interactive JSON log viewer with [jq](https://jqlang.github.io/jq/) filtering. N
 ## Install
 
 ```bash
-$ uv tool install .
+uv tool install jnav
+```
+
+or
+
+```bash
+pipx install jnav
 ```
 
 ## Usage
