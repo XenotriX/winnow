@@ -300,6 +300,31 @@ class TestRebuildFlow:
 
             assert lv._saved_store_idx == 0
 
+    @pytest.mark.asyncio
+    async def test_refilter_when_view_already_empty_does_not_crash(self):
+        app = _Harness(entries=[_info(f"m{i}") for i in range(5)])
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            lv = _query_lv(app)
+            await lv.initial_build()
+            lv.index = 3
+            await pilot.pause()
+
+            # Filter empties the view while the cursor sits past index 0.
+            # After this rebuild, cursor and scroll state must be reset so
+            # they are consistent with the empty view.
+            await app.filter_provider.add_filter('.level == "NONEXISTENT"')
+            await pilot.pause()
+            assert lv.count() == 0
+            assert lv.index == 0
+            assert lv.scroll_top_index == 0
+
+            # A subsequent filter change must rebuild cleanly over the empty view.
+            await app.filter_provider.add_filter('.message == "missing"')
+            await pilot.pause()
+
+            assert lv.count() == 0
+
 
 class TestCurrentIndex:
     @pytest.mark.asyncio

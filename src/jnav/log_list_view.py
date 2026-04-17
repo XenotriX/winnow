@@ -229,6 +229,10 @@ class LogListView(KeySequenceMixin, VirtualListView[IndexedEntry]):
 
             # Scroll to approximately same viewport offset as before
             self.scroll_to_cursor_offset(self._saved_offset)
+        else:
+            self.index = 0
+            self._scroll_top_index = 0
+            self._scroll_line_offset = 0
 
         if self.is_mounted:
             self.refresh()
