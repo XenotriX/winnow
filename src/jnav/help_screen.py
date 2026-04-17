@@ -22,11 +22,9 @@ HELP_TEXT = """\
   [b]ft[/b]        Text filter
   [b]fp[/b]        Pause/resume filters
   [b]S[/b]         Selected fields manager
-  [b]s[/b]         (Un)select field
-  [b]c[/b]         Collapse/expand entries
+  [b]vi[/b]        Toggle inline expanded tree
   [b]d[/b]         Toggle detail panel
   [b]r[/b]         Reset filters, fields, search
-  [b]y[/b]         Copy entry as JSON
   [b]?[/b]         This help
   [b]q[/b]         Quit
 
@@ -34,8 +32,8 @@ HELP_TEXT = """\
   [b]ff[/b]        Filter by value
   [b]fn[/b]        Has field
   [b]s[/b]         (Un)select field
-  [b]v[/b]         View value in $EDITOR
-  [b]t[/b]         Show selected fields only
+  [b]ve[/b]        View value in $EDITOR
+  [b]vo[/b]        Show selected fields only
 """
 
 
