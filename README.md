@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-Interactive JSON log viewer with [jq](https://jqlang.github.io/jq/) filtering. Navigate, search, filter, and inspect structured logs in the terminal.
+A TUI viewer and navigator for structured log files.
 
 ![screenshot](https://github.com/XenotriX/jnav/blob/360911e954d91e267616508384ca2e7814c22913/screenshot.png)
 
@@ -157,3 +157,8 @@ Filters, selected fields, scroll position, panel state, and search terms are sav
 - [lnav](https://github.com/tstack/lnav): the main inspiration: an interactive log viewer with structured querying
 - [hl](https://github.com/pamburus/hl): shaped several design decisions around how JSON log entries should look
 - [Open Color](https://yeun.github.io/open-color/): the palette the theme is built on
+
+
+## See also
+
+- [jnv](https://github.com/ynqa/jnv): an interactive JSON filter and jq query builder. Similar name, different tool. jnv is for constructing jq queries against JSON documents, jnav is for navigating JSONL log streams.
