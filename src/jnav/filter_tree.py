@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, override
 
 from rich.text import Text
+from textual import on
 from textual.binding import Binding, BindingType
 from textual.message import Message
 from textual.widgets import Tree
@@ -74,7 +75,8 @@ class FilterTree(Tree[FilterTreeData]):
     def on_mount(self) -> None:
         self.rebuild()
 
-    def on_tree_node_collapsed(self, event: Tree.NodeCollapsed[FilterTreeData]) -> None:
+    @on(Tree.NodeCollapsed)
+    def _handle_node_collapsed(self, event: Tree.NodeCollapsed[FilterTreeData]) -> None:
         data = event.node.data
         if data is None:
             return
@@ -83,7 +85,8 @@ class FilterTree(Tree[FilterTreeData]):
             node.collapsed = True
             event.node.set_label(self._node_label(event.node))
 
-    def on_tree_node_expanded(self, event: Tree.NodeExpanded[FilterTreeData]) -> None:
+    @on(Tree.NodeExpanded)
+    def _handle_node_expanded(self, event: Tree.NodeExpanded[FilterTreeData]) -> None:
         data = event.node.data
         if data is None:
             return

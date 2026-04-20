@@ -3,12 +3,11 @@ from typing import TYPE_CHECKING, ClassVar, override
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Vertical
-from textual.screen import ModalScreen
-from textual.widgets import Footer, OptionList
+from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
 from jnav.manager_screen_common import list_option_prompt
+from jnav.modal import Modal
 from jnav.selector_provider import SelectorProvider
 from jnav.text_input_screen import TextInputScreen
 
@@ -17,43 +16,19 @@ if TYPE_CHECKING:
     from textual.app import App
 
 
-class SelectorManagerScreen(ModalScreen[bool]):
+class SelectorManagerScreen(Modal):
     if TYPE_CHECKING:
         app = getters.app(App[None])
 
     DEFAULT_CSS = """
-    SelectorManagerScreen {
-        align: center middle;
-    }
-    #selector-modal {
-        width: 60;
-        max-width: 90%;
-        height: auto;
-        max-height: 70%;
-        border: round $primary;
-        background: $background;
-    }
-    #selector-wrapper {
-        padding: 1 2;
-        height: auto;
-    }
     #selector-list {
         height: auto;
         max-height: 14;
         border: none;
     }
-    #selector-modal Footer {
-        background: transparent;
-    }
-    #selector-modal FooterKey .footer-key--key {
-        color: $primary;
-    }
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "maybe_close", "Close", priority=True, show=False),
-        Binding("q", "maybe_close", show=False),
-        Binding("ctrl+c", "maybe_close", show=False),
         Binding("a", "add", "Add"),
         Binding("e", "edit", "Edit"),
         Binding("d", "delete", "Cut"),
@@ -64,24 +39,21 @@ class SelectorManagerScreen(ModalScreen[bool]):
         Binding("k", "cursor_up", show=False),
     ]
 
+    modal_title = "Selectors"
+    modal_width = 60
+    footer_columns = 6
+
     def __init__(self, selector_provider: SelectorProvider) -> None:
         super().__init__()
         self._sp = selector_provider
         self._clipboard: str | None = None
 
     @override
-    def compose(self) -> ComposeResult:
-        yield Vertical(
-            Vertical(
-                OptionList(id="selector-list"),
-                id="selector-wrapper",
-            ),
-            Footer(),
-            id="selector-modal",
-        )
+    def compose_body(self) -> ComposeResult:
+        yield OptionList(id="selector-list")
 
+    @override
     def on_mount(self) -> None:
-        self.query_one("#selector-modal").border_title = "Selectors"
         self._refresh_list(highlight=0)
         self.query_one("#selector-list", OptionList).focus()
 
@@ -182,6 +154,3 @@ class SelectorManagerScreen(ModalScreen[bool]):
             ),
             on_dismiss,
         )
-
-    def action_maybe_close(self) -> None:
-        self.dismiss(True)
