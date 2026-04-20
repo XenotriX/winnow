@@ -17,6 +17,7 @@ class AppState(BaseModel):
     detail_visible: bool = False
     show_selected_only: bool = False
     entry_index: int = 0
+    collapsed_paths: set[str] = Field(default_factory=set)
 
 
 def load(path: Path) -> AppState:

@@ -42,6 +42,7 @@ class DetailPanel(Vertical):
         role_mapper: RoleMapper,
         visible: bool = False,
         show_selected_only: bool = False,
+        collapsed_paths: set[str] | None = None,
     ) -> None:
         super().__init__()
         self._selectors = selectors
@@ -49,6 +50,7 @@ class DetailPanel(Vertical):
         self._search = search
         self._role_mapper = role_mapper
         self._show_selected_only = show_selected_only
+        self._collapsed_paths = collapsed_paths
         self.display = visible
 
     @override
@@ -60,8 +62,13 @@ class DetailPanel(Vertical):
             search=self._search,
             role_mapper=self._role_mapper,
             show_selected_only=self._show_selected_only,
+            collapsed_paths=self._collapsed_paths,
             id="detail-tree",
         )
+
+    @property
+    def collapsed_paths(self) -> set[str]:
+        return self._tree.collapsed_paths
 
     @property
     def _tree(self) -> DetailTree:

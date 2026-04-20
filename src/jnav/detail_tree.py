@@ -5,6 +5,7 @@ import tempfile
 from typing import TYPE_CHECKING, ClassVar, TypedDict
 
 from rich.text import Text
+from textual import on
 from textual.binding import Binding, BindingType
 from textual.events import Key
 from textual.widgets import Tree
@@ -106,6 +107,7 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
         search: SearchEngine,
         role_mapper: RoleMapper,
         show_selected_only: bool = False,
+        collapsed_paths: set[str] | None = None,
         id: str | None = None,
     ) -> None:
         super().__init__(label, id=id)
@@ -114,6 +116,11 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
         self._search = search
         self._role_mapper = role_mapper
         self.show_selected_only = show_selected_only
+        self._collapsed_paths = collapsed_paths or set()
+
+    @property
+    def collapsed_paths(self) -> set[str]:
+        return self._collapsed_paths
 
     def on_focus(self) -> None:
         if self.parent is not None:
@@ -190,10 +197,33 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
             value=data, path="", visitor=visitor, json_paths=self._entry.expanded_paths
         )
         self.root.expand_all()
+        if self._collapsed_paths:
+            self._apply_collapse_state(self.root)
+
+    def _apply_collapse_state(self, node: TreeNode[TreeNodeData]) -> None:
+        if node is not self.root and node.data is not None:
+            path = node.data["path"]
+            if path in self._collapsed_paths and node.is_expanded:
+                node.collapse()
+                return
+        for child in node.children:
+            self._apply_collapse_state(child)
 
     async def on_key(self, event: Key) -> None:
         if await self._handle_sequence_key(event):
             return
+
+    @on(Tree.NodeExpanded)
+    def _track_expanded(self, event: Tree.NodeExpanded[TreeNodeData]) -> None:
+        if event.node.data is None:
+            return
+        self._collapsed_paths.discard(event.node.data["path"])
+
+    @on(Tree.NodeCollapsed)
+    def _track_collapsed(self, event: Tree.NodeCollapsed[TreeNodeData]) -> None:
+        if event.node.data is None:
+            return
+        self._collapsed_paths.add(event.node.data["path"])
 
     async def action_filter_value(self) -> None:
         node = self.cursor_node

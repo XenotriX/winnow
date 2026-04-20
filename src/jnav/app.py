@@ -81,6 +81,7 @@ class JnavApp(App[AppState]):
         expanded_mode: bool = True,
         detail_visible: bool = False,
         show_selected_only: bool = False,
+        collapsed_paths: set[str] | None = None,
         follow: bool = False,
     ) -> None:
         super().__init__()
@@ -107,6 +108,7 @@ class JnavApp(App[AppState]):
         self._expanded_mode = expanded_mode
         self._detail_visible = detail_visible
         self._show_selected_only = show_selected_only
+        self._collapsed_paths = collapsed_paths
         self._start_following = follow
         self._file_name = file_name
         self.sub_title = file_name
@@ -131,6 +133,7 @@ class JnavApp(App[AppState]):
                 role_mapper=self._role_mapper,
                 visible=self._detail_visible,
                 show_selected_only=self._show_selected_only,
+                collapsed_paths=self._collapsed_paths,
             ),
             id="content-area",
         )
@@ -149,6 +152,7 @@ class JnavApp(App[AppState]):
             detail_visible=bool(detail.display),
             show_selected_only=detail.show_selected_only,
             entry_index=log_list.current_index(),
+            collapsed_paths=detail.collapsed_paths,
         )
 
     @override
