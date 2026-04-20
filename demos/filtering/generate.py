@@ -38,11 +38,7 @@ LATENCY_BUCKET_WEIGHTS = [0.6, 0.3, 0.1]
 
 
 def ts(dt: datetime) -> str:
-    return (
-        dt.astimezone(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
+    return dt.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 @click.command()
@@ -53,9 +49,7 @@ def main(seed: int) -> None:
 
     try:
         for i in range(400):
-            when = start + timedelta(
-                seconds=i * 0.5 + random.uniform(0, 0.25)
-            )
+            when = start + timedelta(seconds=i * 0.5 + random.uniform(0, 0.25))
             user = random.choice(USERS)
             method, path = random.choice(PATHS_METHODS)
             status = random.choices(STATUSES, STATUS_WEIGHTS)[0]

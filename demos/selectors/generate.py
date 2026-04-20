@@ -35,11 +35,7 @@ USER_AGENTS = [
 
 
 def ts(dt: datetime) -> str:
-    return (
-        dt.astimezone(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
+    return dt.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 @click.command()
