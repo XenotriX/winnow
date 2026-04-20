@@ -375,46 +375,43 @@ class TestClearFilters:
         assert len(events) == 1
 
 
-class TestDumpAndLoad:
+class TestSetRoot:
     @pytest.mark.asyncio
-    async def test_dump_returns_serializable_dict(self, fp: FilterProvider) -> None:
+    async def test_root_captures_current_tree(self, fp: FilterProvider) -> None:
         await fp.add_filter(".a == 1", label="alpha")
         await fp.add_filter(".b == 2", combine="or")
 
-        data = fp.dump_root()
-
-        assert data["type"] == "group"
-        assert data["operator"] == "and"
-        assert len(data["children"]) == 2
+        assert fp.root.operator == "and"
+        assert len(fp.root.children) == 2
 
     @pytest.mark.asyncio
-    async def test_load_round_trip_preserves_structure(
+    async def test_set_root_round_trip_preserves_structure(
         self, fp: FilterProvider
     ) -> None:
         await fp.add_filter(".a == 1", label="alpha")
         await fp.add_filter(".b == 2", combine="or")
-        original = fp.dump_root()
+        original = fp.root
 
         fresh = FilterProvider()
         events, collect = make_signal_collector()
         await fresh.on_change.subscribe_async(collect)
-        await fresh.load_root(original)
+        await fresh.set_root(original)
 
-        assert fresh.dump_root() == original
+        assert fresh.root == original
         assert len(events) == 1
 
     @pytest.mark.asyncio
-    async def test_load_replaces_existing_root(self, fp: FilterProvider) -> None:
+    async def test_set_root_replaces_existing_tree(self, fp: FilterProvider) -> None:
         await fp.add_filter(".stale == 1")
 
         replacement = FilterGroup(
             operator="or",
             children=[Filter(expr=".fresh == 1")],
-        ).model_dump()
+        )
 
         events, collect = make_signal_collector()
         await fp.on_change.subscribe_async(collect)
-        await fp.load_root(replacement)
+        await fp.set_root(replacement)
 
         assert fp.root.operator == "or"
         assert len(fp.root.children) == 1

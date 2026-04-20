@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 from aioreactive import AsyncSubject
 
@@ -95,9 +95,6 @@ class FilterProvider:
         self._root.children.clear()
         await self.on_change.asend(None)
 
-    def dump_root(self) -> dict[str, Any]:
-        return self._root.model_dump()
-
-    async def load_root(self, data: dict[str, Any]) -> None:
-        self._root = FilterGroup.model_validate(data)
+    async def set_root(self, root: FilterGroup) -> None:
+        self._root = root
         await self.on_change.asend(None)

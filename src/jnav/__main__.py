@@ -10,6 +10,7 @@ import aioreactive as rx
 import click
 from platformdirs import user_data_dir
 
+from jnav import state as app_state
 from jnav.filter_provider import FilterProvider
 from jnav.log_model import LogModel
 from jnav.role_mapper import RoleMapper
@@ -50,6 +51,9 @@ async def _run(file: str | None, follow: bool) -> None:
         click.echo("Usage: jnav [FILE] or pipe JSONL via stdin", err=True)
         raise SystemExit(1)
 
+    state_file = _state_file_for(file) if file else None
+    initial_state = app_state.load(state_file) if state_file else app_state.AppState()
+
     filter_provider = FilterProvider()
     role_mapper = RoleMapper()
     selectors = SelectorProvider()
@@ -60,6 +64,12 @@ async def _run(file: str | None, follow: bool) -> None:
     )
 
     search = SearchEngine(model)
+
+    await filter_provider.set_root(initial_state.filter_root)
+    await selectors.set_selectors(initial_state.selectors)
+    await role_mapper.set_mapping(initial_state.role_mapping)
+    await model.set_filtering_enabled(initial_state.filtering_enabled)
+    await search.set_term(initial_state.search_term)
 
     await model.start()
     await search.start()
@@ -79,19 +89,23 @@ async def _run(file: str | None, follow: bool) -> None:
 
     await entry_stream.subscribe_async(store.append_entries)
 
-    state_file = _state_file_for(file) if file else None
     app = JnavApp(
         model=model,
         filter_provider=filter_provider,
         role_mapper=role_mapper,
         selectors=selectors,
         search=search,
-        state_file=state_file,
-        follow=follow,
         file_name=file if file else "<stdin>",
+        expanded_mode=initial_state.expanded_mode,
+        detail_visible=initial_state.detail_visible,
+        show_selected_only=initial_state.show_selected_only,
+        follow=follow,
     )
     app.title = "jnav"
-    await app.run_async()
+    final_state = await app.run_async()
+
+    if state_file and final_state is not None:
+        app_state.save(state_file, final_state)
 
 
 @click.command()

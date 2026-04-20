@@ -1,6 +1,4 @@
-import json
 import logging
-from pathlib import Path
 from typing import ClassVar, override
 
 from textual import on
@@ -19,6 +17,7 @@ from jnav.role_mapper import RoleMapper
 from jnav.search_engine import SearchEngine
 from jnav.selector_manager_screen import SelectorManagerScreen
 from jnav.selector_provider import SelectorProvider
+from jnav.state import AppState
 from jnav.text_input_screen import TextInputScreen
 from jnav.virtual_list_view import VirtualListView
 
@@ -40,7 +39,7 @@ class FilterBar(Static):
     """
 
 
-class JnavApp(App[None]):
+class JnavApp(App[AppState]):
     ENABLE_COMMAND_PALETTE = False
 
     DEFAULT_CSS = """
@@ -106,13 +105,16 @@ class JnavApp(App[None]):
 
     def __init__(
         self,
+        *,
         model: LogModel,
         filter_provider: FilterProvider,
         role_mapper: RoleMapper,
         selectors: SelectorProvider,
         search: SearchEngine,
         file_name: str,
-        state_file: Path | None = None,
+        expanded_mode: bool = True,
+        detail_visible: bool = False,
+        show_selected_only: bool = False,
         follow: bool = False,
     ) -> None:
         super().__init__()
@@ -137,10 +139,9 @@ class JnavApp(App[None]):
         self._selectors = selectors
         self._search = search
         self._search_pos: int = -1
-        self._expanded_mode: bool = True
-        self._state_file: Path | None = state_file
-        self._detail_visible_on_load: bool = False
-        self._show_selected_only_on_load: bool = False
+        self._expanded_mode = expanded_mode
+        self._detail_visible = detail_visible
+        self._show_selected_only = show_selected_only
         self._start_following = follow
         self._file_name = file_name
         self.sub_title = file_name
@@ -178,8 +179,6 @@ class JnavApp(App[None]):
         yield Footer()
 
     async def on_mount(self) -> None:
-        await self._load_state()
-
         await self._model.on_append.subscribe_async(self._on_entries_changed)
         await self._model.on_rebuild.subscribe_async(self._on_entries_changed)
         await self._search.on_change.subscribe_async(self._on_search_changed)
@@ -190,9 +189,9 @@ class JnavApp(App[None]):
 
         detail_panel = self.query_one("#detail-panel")
         detail_panel.border_title = "Detail"
-        detail_panel.display = self._detail_visible_on_load
+        detail_panel.display = self._detail_visible
         detail_tree = self.query_one("#detail-tree", DetailTree)
-        detail_tree.show_selected_only = self._show_selected_only_on_load
+        detail_tree.show_selected_only = self._show_selected_only
 
         self.call_after_refresh(self._initial_build)
 
@@ -200,45 +199,21 @@ class JnavApp(App[None]):
         await self.query_one("#log-list", LogListView).initial_build()
         self._update_filter_bar()
 
-    async def _load_state(self) -> None:
-        if not self._state_file or not self._state_file.exists():
-            return
-        try:
-            state = json.loads(self._state_file.read_text())
-        except json.JSONDecodeError, OSError:
-            return
-        if "filter_tree" in state:
-            await self._filter_provider.load_root(state["filter_tree"])
-        await self._selectors.set_selectors(state.get("selectors", []))
-        await self._role_mapper.set_mapping(state.get("role_mapping"))
-        self._expanded_mode = state.get("expanded_mode", False)
-        await self._model.set_filtering_enabled(not state.get("filters_paused", False))
-        await self._search.set_term(state.get("search_term", ""))
-        self._detail_visible_on_load = state.get("detail_visible", False)
-        self._show_selected_only_on_load = state.get("show_selected_only", False)
-
-    def _save_state(self) -> None:
-        if not self._state_file:
-            return
+    def to_state(self) -> AppState:
         detail = self.query_one("#detail-tree", DetailTree)
         panel = self.query_one("#detail-panel")
         lv = self.query_one("#log-list", LogListView)
-        state = {
-            "filter_tree": self._filter_provider.dump_root(),
-            "selectors": self._selectors.selectors,
-            "role_mapping": self._role_mapper.mapping.model_dump(),
-            "expanded_mode": lv.expanded_mode,
-            "filters_paused": self._model.filtering_enabled is False,
-            "search_term": self._search.term,
-            "entry_index": lv.current_index(),
-            "detail_visible": panel.display,
-            "show_selected_only": detail.show_selected_only,
-        }
-        try:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
-            self._state_file.write_text(json.dumps(state))
-        except OSError:
-            pass
+        return AppState(
+            filter_root=self._filter_provider.root,
+            selectors=self._selectors.selectors,
+            role_mapping=self._role_mapper.mapping,
+            search_term=self._search.term,
+            filtering_enabled=self._model.filtering_enabled,
+            expanded_mode=lv.expanded_mode,
+            detail_visible=bool(panel.display),
+            show_selected_only=detail.show_selected_only,
+            entry_index=lv.current_index(),
+        )
 
     async def _on_entries_changed(self, _: object) -> None:
         self._update_filter_bar()
@@ -265,9 +240,9 @@ class JnavApp(App[None]):
 
     @override
     async def action_quit(self) -> None:
-        self._save_state()
+        state = self.to_state()
         self.workers.cancel_all()
-        self.exit()
+        self.exit(state)
 
     def _focus_main(self) -> None:
         self.query_one("#log-list", LogListView).focus()
