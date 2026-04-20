@@ -324,11 +324,14 @@ class VirtualListView[T](Widget, can_focus=True):
             self.index = 0
         await self._model.on_append.subscribe_async(self._on_model_append)
 
-    async def _on_model_append(self, _: Sequence[T]) -> None:
+    async def _on_model_append(self, batch: Sequence[T]) -> None:
+        was_empty = self.count() == len(batch)
         if self._follow:
             self.index = self.count() - 1
         elif self.index < 0 and not self._model.is_empty():
             self.index = 0
+        elif was_empty:
+            self.index = self.index
         self.refresh()
 
     def count(self) -> int:
