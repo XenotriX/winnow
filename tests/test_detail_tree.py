@@ -46,7 +46,7 @@ def _make_detail_tree(
     selectors.has_selector = Mock(return_value=has_selector)
     selectors.add_selector = AsyncMock()
     selectors.remove_selector_by_path = AsyncMock()
-    selectors.active_selectors = set()
+    selectors.active_selectors = []
     dt._selectors = selectors
 
     filters = Mock(spec=FilterProvider)

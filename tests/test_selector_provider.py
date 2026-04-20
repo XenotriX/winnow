@@ -116,7 +116,17 @@ class TestDerivedProperties:
         await sp.add_selector("b")
         await sp.toggle_selector(1)
 
-        assert sp.active_selectors == {"a"}
+        assert sp.active_selectors == ["a"]
+
+    @pytest.mark.asyncio
+    async def test_active_selectors_preserves_order(self, sp: SelectorProvider) -> None:
+        await sp.add_selector("c")
+        await sp.add_selector("a")
+        await sp.add_selector("b")
+        await sp.add_selector("skip")
+        await sp.toggle_selector(3)
+
+        assert list(sp.active_selectors) == ["c", "a", "b"]
 
     @pytest.mark.asyncio
     async def test_has_selector(self, sp: SelectorProvider) -> None:

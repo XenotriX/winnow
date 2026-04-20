@@ -31,7 +31,7 @@ def _add_leaf(
 def render_inline_tree(
     parsed: ParsedEntry,
     *,
-    custom_fields: set[str],
+    custom_fields: list[str],
     search: SearchEngine | None = None,
     key_style: Style | None = None,
     selected_style: Style | None = None,
@@ -57,7 +57,7 @@ def render_inline_tree(
         root=tree,
         add_branch=_add_branch,
         add_leaf=_add_leaf,
-        selected=custom_fields,
+        selected=set(custom_fields),
         key_style=key_style or _default,
         selected_style=selected_style or _default,
         value_style=value_style or _default,

@@ -2,7 +2,7 @@ import functools
 import json
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Annotated, Any, Literal, cast
 
 import jq
@@ -160,7 +160,7 @@ def _jq_path_to_str(parts: Sequence[str | int]) -> str:
     return result
 
 
-def resolve_selected_paths(columns: set[str], entry: dict[str, Any]) -> set[str]:
+def resolve_selected_paths(columns: Iterable[str], entry: dict[str, Any]) -> set[str]:
     """Expand jq column expressions into concrete paths for a specific entry."""
     result: set[str] = set()
     for col in columns:
