@@ -380,14 +380,14 @@ class TestActionPaste:
         assert fp.root.children == []
 
     @pytest.mark.asyncio
-    async def test_paste_at_no_cursor_appends_to_root(self, fp: FilterProvider) -> None:
+    async def test_paste_at_no_cursor_is_noop(self, fp: FilterProvider) -> None:
         tree = _make_tree_stub(fp)
         leaf = Filter(expr=".pasted")
         tree._clipboard = leaf
         await tree.action_paste()
-        assert fp.root.children == [leaf]
-        assert tree._clipboard is None
-        cast(Mock, tree.rebuild).assert_called_once()
+        assert fp.root.children == []
+        assert tree._clipboard is leaf
+        cast(Mock, tree.rebuild).assert_not_called()
 
     @pytest.mark.asyncio
     async def test_paste_at_leaf_inserts_after(self, fp: FilterProvider) -> None:
@@ -401,12 +401,16 @@ class TestActionPaste:
         new_leaf = Filter(expr=".pasted")
         tree._clipboard = new_leaf
         await tree.action_paste()
-        assert fp.root.children[1] is new_leaf
-        assert tree._clipboard is None
+        assert fp.root.children[1] == new_leaf
+        assert fp.root.children[1] is not new_leaf
+        assert tree._clipboard is new_leaf
 
     @pytest.mark.asyncio
-    async def test_paste_at_group_appends_inside(self, fp: FilterProvider) -> None:
-        group = FilterGroup(operator="or")
+    async def test_paste_at_expanded_group_inserts_as_first_child(
+        self, fp: FilterProvider
+    ) -> None:
+        existing = Filter(expr=".existing")
+        group = FilterGroup(operator="or", collapsed=False, children=[existing])
         fp.root.children.append(group)
         tree = _make_tree_stub(
             fp,
@@ -415,8 +419,129 @@ class TestActionPaste:
         new_leaf = Filter(expr=".pasted")
         tree._clipboard = new_leaf
         await tree.action_paste()
-        assert group.children == [new_leaf]
-        assert tree._clipboard is None
+        assert group.children == [new_leaf, existing]
+        assert tree._clipboard is new_leaf
+
+    @pytest.mark.asyncio
+    async def test_paste_at_collapsed_group_inserts_after_as_sibling(
+        self, fp: FilterProvider
+    ) -> None:
+        group = FilterGroup(operator="or", collapsed=True)
+        trailing = Filter(expr=".trailing")
+        fp.root.children.extend([group, trailing])
+        tree = _make_tree_stub(
+            fp,
+            cursor_data=FilterTreeData(node=group, parent=fp.root),
+        )
+        new_leaf = Filter(expr=".pasted")
+        tree._clipboard = new_leaf
+        await tree.action_paste()
+        assert fp.root.children == [group, new_leaf, trailing]
+        assert group.children == []
+        assert tree._clipboard is new_leaf
+
+    @pytest.mark.asyncio
+    async def test_paste_at_root_inserts_as_first_child(
+        self, fp: FilterProvider
+    ) -> None:
+        existing = Filter(expr=".existing")
+        fp.root.children.append(existing)
+        tree = _make_tree_stub(
+            fp,
+            cursor_data=FilterTreeData(node=fp.root, parent=fp.root),
+        )
+        new_leaf = Filter(expr=".pasted")
+        tree._clipboard = new_leaf
+        await tree.action_paste()
+        assert fp.root.children == [new_leaf, existing]
+        assert tree._clipboard is new_leaf
+
+
+class TestActionPasteAbove:
+    @pytest.mark.asyncio
+    async def test_noop_when_clipboard_empty(self, fp: FilterProvider) -> None:
+        tree = _make_tree_stub(fp)
+        await tree.action_paste_above()
+        cast(Mock, tree.rebuild).assert_not_called()
+        assert fp.root.children == []
+
+    @pytest.mark.asyncio
+    async def test_paste_above_at_no_cursor_is_noop(self, fp: FilterProvider) -> None:
+        tree = _make_tree_stub(fp)
+        leaf = Filter(expr=".pasted")
+        tree._clipboard = leaf
+        await tree.action_paste_above()
+        assert fp.root.children == []
+        assert tree._clipboard is leaf
+        cast(Mock, tree.rebuild).assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_paste_above_at_leaf_inserts_before(self, fp: FilterProvider) -> None:
+        await fp.add_filter(".a")
+        await fp.add_filter(".b")
+        leaf_b = fp.root.children[1]
+        tree = _make_tree_stub(
+            fp,
+            cursor_data=FilterTreeData(node=leaf_b, parent=fp.root),
+        )
+        new_leaf = Filter(expr=".pasted")
+        tree._clipboard = new_leaf
+        await tree.action_paste_above()
+        assert fp.root.children[1] == new_leaf
+        assert fp.root.children[1] is not new_leaf
+        assert fp.root.children[2] is leaf_b
+        assert tree._clipboard is new_leaf
+
+    @pytest.mark.asyncio
+    async def test_paste_above_at_expanded_group_inserts_before_as_sibling(
+        self, fp: FilterProvider
+    ) -> None:
+        leading = Filter(expr=".leading")
+        existing = Filter(expr=".existing")
+        group = FilterGroup(operator="or", collapsed=False, children=[existing])
+        fp.root.children.extend([leading, group])
+        tree = _make_tree_stub(
+            fp,
+            cursor_data=FilterTreeData(node=group, parent=fp.root),
+        )
+        new_leaf = Filter(expr=".pasted")
+        tree._clipboard = new_leaf
+        await tree.action_paste_above()
+        assert fp.root.children == [leading, new_leaf, group]
+        assert group.children == [existing]
+        assert tree._clipboard is new_leaf
+
+    @pytest.mark.asyncio
+    async def test_paste_above_at_collapsed_group_inserts_before_as_sibling(
+        self, fp: FilterProvider
+    ) -> None:
+        leading = Filter(expr=".leading")
+        group = FilterGroup(operator="or", collapsed=True)
+        fp.root.children.extend([leading, group])
+        tree = _make_tree_stub(
+            fp,
+            cursor_data=FilterTreeData(node=group, parent=fp.root),
+        )
+        new_leaf = Filter(expr=".pasted")
+        tree._clipboard = new_leaf
+        await tree.action_paste_above()
+        assert fp.root.children == [leading, new_leaf, group]
+        assert tree._clipboard is new_leaf
+
+    @pytest.mark.asyncio
+    async def test_paste_above_at_root_is_noop(self, fp: FilterProvider) -> None:
+        existing = Filter(expr=".existing")
+        fp.root.children.append(existing)
+        tree = _make_tree_stub(
+            fp,
+            cursor_data=FilterTreeData(node=fp.root, parent=fp.root),
+        )
+        new_leaf = Filter(expr=".pasted")
+        tree._clipboard = new_leaf
+        await tree.action_paste_above()
+        assert fp.root.children == [existing]
+        assert tree._clipboard is new_leaf
+        cast(Mock, tree.rebuild).assert_not_called()
 
 
 class TestActionAddFilter:

@@ -1,5 +1,6 @@
+import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, override
+from typing import TYPE_CHECKING, ClassVar, Literal, override
 
 from rich.text import Text
 from textual import on
@@ -21,6 +22,9 @@ from jnav.text_input_screen import TextInputScreen
 if TYPE_CHECKING:
     from textual import getters
     from textual.app import App
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -56,6 +60,7 @@ class FilterTree(Tree[FilterTreeData]):
         Binding("n", "toggle_negated", "Negate", show=True),
         Binding("g", "add_group", "Add group", show=True),
         Binding("p", "paste", "Paste", show=True),
+        Binding("P", "paste_above", "Paste above", show=True),
         Binding("c", "flatten", "Flatten", show=True),
         Binding("y", "yank", "Yank", show=True),
         Binding("r", "rename", "Rename", show=True),
@@ -266,16 +271,10 @@ class FilterTree(Tree[FilterTreeData]):
         self.rebuild()
 
     async def action_paste(self) -> None:
-        if self._clipboard is None:
-            return
-        parent, idx = self._insert_at_cursor()
-        if idx is not None:
-            parent.children.insert(idx + 1, self._clipboard)
-        else:
-            parent.children.append(self._clipboard)
-        self._clipboard = None
-        await self._fp.on_change.asend(None)
-        self.rebuild()
+        await self._paste_at("after")
+
+    async def action_paste_above(self) -> None:
+        await self._paste_at("before")
 
     def action_add_filter(self) -> None:
         target = self._insert_at_cursor()
@@ -345,3 +344,40 @@ class FilterTree(Tree[FilterTreeData]):
             ),
             on_dismiss,
         )
+
+    async def _paste_at(self, position: Literal["before", "after"]) -> None:
+        # Ignore if clipboard is empty
+        if self._clipboard is None:
+            return
+
+        data = self._cursor_data()
+
+        # No-op if not on a node, shouldn't happen
+        if data is None:
+            logger.warning("Paste action invoked with no cursor data")
+            return
+
+        # Don't allow pasting before the root
+        if data.node is self._fp.root and position == "before":
+            return
+
+        parent, idx = self._insert_position_for(data, position)
+        parent.children.insert(idx, self._clipboard.model_copy(deep=True))
+        await self._fp.on_change.asend(None)
+        self.rebuild()
+
+    @staticmethod
+    def _insert_position_for(
+        data: FilterTreeData,
+        position: Literal["before", "after"],
+    ) -> tuple[FilterGroup, int]:
+        # Always insert as a sibling when inserting before
+        if position == "before":
+            return (data.parent, data.parent.children.index(data.node))
+
+        # If inserting after an expanded group, insert as the first child
+        if isinstance(data.node, FilterGroup) and not data.node.collapsed:
+            return (data.node, 0)
+
+        # Otherwise, insert as a sibling after the current node
+        return (data.parent, data.parent.children.index(data.node) + 1)

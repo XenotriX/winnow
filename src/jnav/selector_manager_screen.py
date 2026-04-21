@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, ClassVar, override
+from typing import TYPE_CHECKING, ClassVar, Literal, override
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -34,14 +34,15 @@ class SelectorManagerScreen(Modal):
         Binding("d", "delete", "Cut"),
         Binding("y", "yank", "Yank"),
         Binding("p", "paste", "Paste"),
+        Binding("P", "paste_above", "Paste above"),
         Binding("t", "toggle_item", "Toggle"),
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
     ]
 
     modal_title = "Selectors"
-    modal_width = 60
-    footer_columns = 6
+    modal_width = 70
+    footer_columns = 7
 
     def __init__(self, selector_provider: SelectorProvider) -> None:
         super().__init__()
@@ -101,14 +102,10 @@ class SelectorManagerScreen(Modal):
         self._clipboard = selectors[idx]["path"]
 
     async def action_paste(self) -> None:
-        if self._clipboard is None:
-            return
-        ol = self.query_one("#selector-list", OptionList)
-        idx = ol.highlighted
-        target = (idx + 1) if idx is not None else len(self._sp.selectors)
-        await self._sp.insert_selector(target, self._clipboard)
-        self._clipboard = None
-        self._refresh_list(target)
+        await self._paste_at("after")
+
+    async def action_paste_above(self) -> None:
+        await self._paste_at("before")
 
     def action_add(self) -> None:
         ol = self.query_one("#selector-list", OptionList)
@@ -154,3 +151,25 @@ class SelectorManagerScreen(Modal):
             ),
             on_dismiss,
         )
+
+    def _highlighted_index(self) -> int | None:
+        return self.query_one("#selector-list", OptionList).highlighted
+
+    @staticmethod
+    def _insert_position_for(idx: int, position: Literal["before", "after"]) -> int:
+        return idx if position == "before" else idx + 1
+
+    async def _paste_at(self, position: Literal["before", "after"]) -> None:
+        # Ignore if clipboard is empty
+        if self._clipboard is None:
+            return
+
+        # Determine target index for insertion
+        idx = self._highlighted_index()
+        if idx is None:
+            target = 0 if position == "before" else len(self._sp.selectors)
+        else:
+            target = self._insert_position_for(idx, position)
+
+        await self._sp.insert_selector(target, self._clipboard)
+        self._refresh_list(target)
