@@ -5,6 +5,8 @@ from rich.padding import Padding
 from rich.style import Style
 from textual.color import Color
 
+from jnav.tree_rendering import TreeStyle
+
 from .inline_tree import render_inline_tree
 from .log_entry_item import render_summary
 from .role_mapper import RoleMapper
@@ -70,16 +72,19 @@ class LogEntryRenderer:
         if not expanded:
             return text
 
+        style = TreeStyle(
+            key=styles.tree_key,
+            value=styles.tree_value,
+            null=styles.tree_value_null,
+            json_str=styles.tree_json_string,
+            search_hl=styles.tree_search_highlight,
+        )
+
         tree = render_inline_tree(
             ie.entry,
             custom_fields=self._selectors.active_selectors,
             search=self._search,
-            key_style=styles.tree_key,
-            selected_style=styles.tree_key_selected,
-            value_style=styles.tree_value,
-            value_null_style=styles.tree_value_null,
-            json_string_style=styles.tree_json_string,
-            search_highlight_style=styles.tree_search_highlight,
+            style=style,
         )
         if tree is None:
             return text

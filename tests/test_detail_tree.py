@@ -13,7 +13,9 @@ from textual.binding import BindingsMap
 from jnav.detail_tree import DetailTree, TreeNodeData
 from jnav.field_mapping import FieldMapping, TimestampField
 from jnav.filter_provider import FilterProvider
+from jnav.json_model import JsonValue
 from jnav.log_model import LogModel
+from jnav.node_path import NodePath
 from jnav.role_mapper import RoleMapper
 from jnav.search_engine import SearchEngine
 from jnav.selector_provider import SelectorProvider
@@ -99,7 +101,9 @@ class TestShowEntry:
 class TestActionFilterValue:
     @pytest.mark.asyncio
     async def test_string_value_uses_quoted_literal(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "level", "value": "ERROR"})
+        dt = _make_detail_tree(
+            cursor_data={"path": NodePath() / "level", "value": "ERROR"}
+        )
         await dt.action_filter_value()
         cast(AsyncMock, dt._filters.add_filter).assert_awaited_once_with(
             '.level == "ERROR"'
@@ -107,13 +111,15 @@ class TestActionFilterValue:
 
     @pytest.mark.asyncio
     async def test_integer_value_uses_bare_literal(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "count", "value": 42})
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "count", "value": 42})
         await dt.action_filter_value()
         cast(AsyncMock, dt._filters.add_filter).assert_awaited_once_with(".count == 42")
 
     @pytest.mark.asyncio
     async def test_null_value_uses_null_literal(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "maybe", "value": None})
+        dt = _make_detail_tree(
+            cursor_data={"path": NodePath() / "maybe", "value": None}
+        )
         await dt.action_filter_value()
         cast(AsyncMock, dt._filters.add_filter).assert_awaited_once_with(
             ".maybe == null"
@@ -121,7 +127,7 @@ class TestActionFilterValue:
 
     @pytest.mark.asyncio
     async def test_bool_value_uses_bare_literal(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "flag", "value": True})
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "flag", "value": True})
         await dt.action_filter_value()
         cast(AsyncMock, dt._filters.add_filter).assert_awaited_once_with(
             ".flag == true"
@@ -129,13 +135,15 @@ class TestActionFilterValue:
 
     @pytest.mark.asyncio
     async def test_dict_value_is_noop(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "obj", "value": {"k": 1}})
+        dt = _make_detail_tree(
+            cursor_data={"path": NodePath() / "obj", "value": {"k": 1}}
+        )
         await dt.action_filter_value()
         cast(AsyncMock, dt._filters.add_filter).assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_list_value_is_noop(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "xs", "value": [1, 2]})
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "xs", "value": [1, 2]})
         await dt.action_filter_value()
         cast(AsyncMock, dt._filters.add_filter).assert_not_awaited()
 
@@ -158,7 +166,9 @@ class TestActionFilterValue:
 class TestActionFilterHas:
     @pytest.mark.asyncio
     async def test_adds_not_null_filter(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "user.id", "value": "x"})
+        dt = _make_detail_tree(
+            cursor_data={"path": NodePath() / "user" / "id", "value": "x"}
+        )
         await dt.action_filter_has()
         cast(AsyncMock, dt._filters.add_filter).assert_awaited_once_with(
             ".user.id != null"
@@ -166,7 +176,9 @@ class TestActionFilterHas:
 
     @pytest.mark.asyncio
     async def test_uses_path_even_for_dict_value(self) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "obj", "value": {"k": 1}})
+        dt = _make_detail_tree(
+            cursor_data={"path": NodePath() / "obj", "value": {"k": 1}}
+        )
         await dt.action_filter_has()
         cast(AsyncMock, dt._filters.add_filter).assert_awaited_once_with(".obj != null")
 
@@ -190,7 +202,7 @@ class TestActionAddSelect:
     @pytest.mark.asyncio
     async def test_adds_prefixed_selector_when_absent(self) -> None:
         dt = _make_detail_tree(
-            cursor_data={"path": "user.id", "value": 1},
+            cursor_data={"path": NodePath() / "user" / "id", "value": 1},
             has_selector=False,
         )
         await dt.action_add_select()
@@ -201,7 +213,7 @@ class TestActionAddSelect:
     @pytest.mark.asyncio
     async def test_removes_selector_when_present(self) -> None:
         dt = _make_detail_tree(
-            cursor_data={"path": "user.id", "value": 1},
+            cursor_data={"path": NodePath() / "user" / "id", "value": 1},
             has_selector=True,
         )
         await dt.action_add_select()
@@ -261,7 +273,9 @@ class TestActionViewValue:
     def test_scalar_writes_txt_file_with_str_value(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "msg", "value": "hello"})
+        dt = _make_detail_tree(
+            cursor_data={"path": NodePath() / "msg", "value": "hello"}
+        )
         _install_app_mock(dt, monkeypatch)
         captured: dict[str, Any] = {}
 
@@ -282,8 +296,8 @@ class TestActionViewValue:
     def test_dict_writes_json_file_with_indented_content(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        value = {"a": 1, "b": [2, 3]}
-        dt = _make_detail_tree(cursor_data={"path": "obj", "value": value})
+        value: JsonValue = {"a": 1, "b": [2, 3]}
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "obj", "value": value})
         _install_app_mock(dt, monkeypatch)
         captured: dict[str, Any] = {}
 
@@ -300,8 +314,8 @@ class TestActionViewValue:
         assert captured["content"] == json.dumps(value, indent=2, default=str)
 
     def test_list_writes_json_file(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        value = [1, 2, 3]
-        dt = _make_detail_tree(cursor_data={"path": "xs", "value": value})
+        value: JsonValue = [1, 2, 3]
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "xs", "value": value})
         _install_app_mock(dt, monkeypatch)
         captured: dict[str, Any] = {}
 
@@ -320,7 +334,7 @@ class TestActionViewValue:
     def test_falls_back_to_less_when_editor_unset(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "msg", "value": "x"})
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "msg", "value": "x"})
         _install_app_mock(dt, monkeypatch)
         monkeypatch.delenv("EDITOR", raising=False)
         captured: dict[str, Any] = {}
@@ -335,7 +349,7 @@ class TestActionViewValue:
         assert captured["argv"][0] == "less"
 
     def test_suspend_called(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "msg", "value": "x"})
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "msg", "value": "x"})
         app = _install_app_mock(dt, monkeypatch)
         monkeypatch.setattr(
             "jnav.detail_tree.subprocess.run", Mock(return_value=Mock(returncode=0))
@@ -347,7 +361,7 @@ class TestActionViewValue:
     def test_tempfile_unlinked_even_if_editor_fails(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "msg", "value": "x"})
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "msg", "value": "x"})
         _install_app_mock(dt, monkeypatch)
         monkeypatch.setenv("EDITOR", "vim")
         captured: dict[str, Any] = {}
@@ -486,7 +500,7 @@ class TestShowSelectedOnly:
             child_paths = {
                 c.data["path"] for c in tree.root.children if c.data is not None
             }
-            assert child_paths == {".level"}
+            assert child_paths == {NodePath() / ".level"}
 
     @pytest.mark.asyncio
     async def test_show_selected_only_with_selector_resolving_to_nothing(self) -> None:
@@ -502,7 +516,7 @@ class TestShowSelectedOnly:
             child_paths = {
                 c.data["path"] for c in tree.root.children if c.data is not None
             }
-            assert child_paths == {".nonexistent"}
+            assert child_paths == set()
 
     @pytest.mark.asyncio
     async def test_without_show_selected_only_full_entry_rendered(self) -> None:
@@ -517,7 +531,7 @@ class TestShowSelectedOnly:
             child_paths = {
                 c.data["path"] for c in tree.root.children if c.data is not None
             }
-            assert child_paths == {"level", "message"}
+            assert child_paths == {NodePath() / "level", NodePath() / "message"}
 
     @pytest.mark.asyncio
     async def test_nested_entry_adds_branch_nodes(self) -> None:
@@ -531,13 +545,16 @@ class TestShowSelectedOnly:
             user_nodes = [
                 c
                 for c in tree.root.children
-                if c.data is not None and c.data["path"] == "user"
+                if c.data is not None and c.data["path"] == NodePath() / "user"
             ]
             assert len(user_nodes) == 1
             user = user_nodes[0]
             assert not user.allow_expand or len(user.children) > 0
             child_paths = {c.data["path"] for c in user.children if c.data is not None}
-            assert {"user.id", "user.name"} <= child_paths
+            assert {
+                NodePath() / "user" / "id",
+                NodePath() / "user" / "name",
+            } <= child_paths
 
 
 class TestRebuildGuards:
@@ -581,7 +598,7 @@ class TestRerenderOnSignal:
             child_paths = {
                 c.data["path"] for c in tree.root.children if c.data is not None
             }
-            assert child_paths == {"level", "message"}
+            assert child_paths == {NodePath() / "level", NodePath() / "message"}
 
     @pytest.mark.asyncio
     async def test_search_change_triggers_rebuild(self) -> None:
@@ -625,7 +642,7 @@ class TestTempDirCreated:
     def test_tempdir_created_before_write(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        dt = _make_detail_tree(cursor_data={"path": "msg", "value": "x"})
+        dt = _make_detail_tree(cursor_data={"path": NodePath() / "msg", "value": "x"})
         _install_app_mock(dt, monkeypatch)
         monkeypatch.setenv("EDITOR", "vim")
         monkeypatch.setattr(

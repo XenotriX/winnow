@@ -10,14 +10,11 @@ from jnav.filtering import (
     Filter,
     FilterGroup,
     _compile_jq,  # pyright: ignore[reportPrivateUsage]
-    _jq_path_to_str,  # pyright: ignore[reportPrivateUsage]
     apply_filter_tree,
     apply_jq_filter,
     build_expression,
     check_filter_warning,
-    get_nested,
     jq_value_literal,
-    resolve_selected_paths,
     text_search_expr,
 )
 from jnav.json_model import JsonValue
@@ -204,43 +201,6 @@ class TestCheckFilterWarning:
         assert check_filter_warning('.msg == "a=b"') is None
 
 
-class TestGetNested:
-    def test_simple_field(self) -> None:
-        assert get_nested({"level": "INFO"}, ".level") == "INFO"
-
-    def test_nested_field(self) -> None:
-        assert get_nested({"a": {"b": 1}}, ".a.b") == 1
-
-    def test_missing_field_returns_none(self) -> None:
-        assert get_nested({"a": 1}, ".missing") is None
-
-    def test_iteration_with_multiple_results_returns_list(self) -> None:
-        assert get_nested({"tags": [1, 2, 3]}, ".tags[]") == [1, 2, 3]
-
-    def test_iteration_with_single_result_returns_scalar(self) -> None:
-        assert get_nested({"tags": [42]}, ".tags[]") == 42
-
-    def test_iteration_with_no_results_returns_empty_list(self) -> None:
-        assert get_nested({"tags": []}, ".tags[]") == []
-
-    def test_invalid_jq_returns_none(self) -> None:
-        assert get_nested({"a": 1}, ".[") is None
-
-    def test_identity_path_returns_entry(self) -> None:
-        entry: JsonValue = {"a": 1}
-        assert get_nested(entry, ".") == entry
-
-    def test_empty_path_returns_none(self) -> None:
-        assert get_nested({"a": 1}, "") is None
-
-    def test_index_into_scalar_returns_none(self) -> None:
-        assert get_nested({"a": 1}, ".a.b") is None
-
-    def test_string_literal_containing_brackets(self) -> None:
-        result = get_nested({"msg": "hello[]"}, '.msg | contains("[]")')
-        assert result is True
-
-
 class TestJqValueLiteral:
     def test_string_is_quoted(self) -> None:
         assert jq_value_literal("hello") == '"hello"'
@@ -292,93 +252,6 @@ class TestJqValueLiteral:
         literal = jq_value_literal(value)
         result = jq.compile(literal).input_value(None).first()
         assert result == value
-
-
-class TestJqPathToStr:
-    def test_empty(self) -> None:
-        assert _jq_path_to_str([]) == ""
-
-    def test_single_string_key_no_leading_dot(self) -> None:
-        assert _jq_path_to_str(["a"]) == "a"
-
-    def test_two_string_keys(self) -> None:
-        assert _jq_path_to_str(["a", "b"]) == "a.b"
-
-    def test_single_int_index(self) -> None:
-        assert _jq_path_to_str([0]) == "[0]"
-
-    def test_mixed_string_then_int_then_string(self) -> None:
-        assert _jq_path_to_str(["a", 0, "b"]) == "a[0].b"
-
-    def test_int_first(self) -> None:
-        assert _jq_path_to_str([0, "a"]) == "[0].a"
-
-    @given(
-        st.lists(
-            st.one_of(
-                st.from_regex(r"[a-z][a-z0-9_]{0,8}", fullmatch=True),
-                st.integers(min_value=0, max_value=1000),
-            ),
-            min_size=1,
-            max_size=6,
-        )
-    )
-    def test_property_output_parses_as_jq_path(self, parts: list[str | int]) -> None:
-        path = _jq_path_to_str(parts)
-        jq.compile("." + path)
-
-    @given(st.lists(st.text(min_size=1), min_size=1, max_size=6))
-    def test_property_string_only_equivalent_to_dot_join(
-        self, parts: list[str]
-    ) -> None:
-        assert _jq_path_to_str(parts) == ".".join(parts)
-
-
-class TestResolveSelectedPaths:
-    def test_trivial_column(self) -> None:
-        result = resolve_selected_paths({"level"}, {"level": "INFO"})
-        assert result == {"level"}
-
-    def test_leading_dot_trivial(self) -> None:
-        result = resolve_selected_paths({".level"}, {"level": "INFO"})
-        assert result == {"level"}
-
-    def test_simple_iteration(self) -> None:
-        result = resolve_selected_paths({".tags[]"}, {"tags": ["a", "b", "c"]})
-        assert result == {"tags[0]", "tags[1]", "tags[2]"}
-
-    def test_iteration_with_pipe_into_field(self) -> None:
-        result = resolve_selected_paths(
-            {".items[] | .name"},
-            {"items": [{"name": "x"}, {"name": "y"}]},
-        )
-        assert result == {"items[0].name", "items[1].name"}
-
-    def test_pipe_with_dict_expansion(self) -> None:
-        # When `path(...)` wrapping fails (constructed object is not
-        # path-addressable) but the base expression is, fall back to
-        # base + dict-key combination.
-        result = resolve_selected_paths(
-            {".items[] | {a: .x, b: .y}"},
-            {"items": [{"x": 1, "y": 2}]},
-        )
-        assert "items[0].a" in result
-        assert "items[0].b" in result
-
-    def test_invalid_jq_falls_back_to_raw_column(self) -> None:
-        col = ".items[] |"
-        result = resolve_selected_paths({col}, {"a": 1})
-        assert result == {col}
-
-    def test_multiple_columns_mixed(self) -> None:
-        result = resolve_selected_paths(
-            {".level", ".tags[]"},
-            {"level": "INFO", "tags": ["a", "b"]},
-        )
-        assert result == {"level", "tags[0]", "tags[1]"}
-
-    def test_empty_columns(self) -> None:
-        assert resolve_selected_paths(set(), {"a": 1}) == set()
 
 
 class TestBuildExpression:

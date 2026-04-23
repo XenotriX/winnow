@@ -1,5 +1,3 @@
-from typing import Any, cast
-
 import pytest
 import pytest_asyncio
 
@@ -113,42 +111,43 @@ class TestSelectorMutations:
 
 
 class TestSelectorResolve:
-    def _resolve(self, path: str, entry: dict[str, Any]) -> JsonValue:
-        return Selector(path=path, enabled=True).resolve(cast(JsonValue, entry))
+    def _sel(self, path: str) -> Selector:
+        return Selector(path=path, enabled=True)
 
     def test_simple_field(self) -> None:
-        assert self._resolve(".level", {"level": "INFO"}) == "INFO"
+        assert self._sel(".level").resolve({"level": "INFO"}) == "INFO"
 
     def test_nested_field(self) -> None:
-        assert self._resolve(".a.b", {"a": {"b": 1}}) == 1
+        assert self._sel(".a.b").resolve({"a": {"b": 1}}) == 1
 
     def test_missing_field_returns_none(self) -> None:
-        assert self._resolve(".missing", {"a": 1}) is None
+        assert self._sel(".missing").resolve({"a": 1}) is None
 
     def test_iteration_with_multiple_results_returns_list(self) -> None:
-        assert self._resolve(".tags[]", {"tags": [1, 2, 3]}) == [1, 2, 3]
+        assert self._sel(".tags[]").resolve({"tags": [1, 2, 3]}) == [1, 2, 3]
 
     def test_iteration_with_single_result_returns_scalar(self) -> None:
-        assert self._resolve(".tags[]", {"tags": [42]}) == 42
+        assert self._sel(".tags[]").resolve({"tags": [42]}) == 42
 
     def test_iteration_with_no_results_returns_empty_list(self) -> None:
-        assert self._resolve(".tags[]", {"tags": []}) == []
+        assert self._sel(".tags[]").resolve({"tags": []}) == []
 
     def test_invalid_jq_returns_none(self) -> None:
-        assert self._resolve(".[", {"a": 1}) is None
+        assert self._sel(".[").resolve({"a": 1}) is None
 
     def test_identity_path_returns_entry(self) -> None:
-        entry = {"a": 1}
-        assert self._resolve(".", entry) == entry
+        entry: JsonValue = {"a": 1}
+        assert self._sel(".").resolve(entry) == entry
 
     def test_empty_path_returns_none(self) -> None:
-        assert self._resolve("", {"a": 1}) is None
+        assert self._sel("").resolve({"a": 1}) is None
 
     def test_index_into_scalar_returns_none(self) -> None:
-        assert self._resolve(".a.b", {"a": 1}) is None
+        assert self._sel(".a.b").resolve({"a": 1}) is None
 
     def test_string_literal_containing_brackets(self) -> None:
-        assert self._resolve('.msg | contains("[]")', {"msg": "hello[]"}) is True
+        result = self._sel('.msg | contains("[]")').resolve({"msg": "hello[]"})
+        assert result is True
 
 
 class TestDerivedProperties:
@@ -158,7 +157,7 @@ class TestDerivedProperties:
         await sp.add_selector("b")
         await sp.toggle_selector(1)
 
-        assert sp.active_selectors == ["a"]
+        assert [s.path for s in sp.active_selectors] == ["a"]
 
     @pytest.mark.asyncio
     async def test_active_selectors_preserves_order(self, sp: SelectorProvider) -> None:
@@ -168,7 +167,7 @@ class TestDerivedProperties:
         await sp.add_selector("skip")
         await sp.toggle_selector(3)
 
-        assert list(sp.active_selectors) == ["c", "a", "b"]
+        assert [s.path for s in sp.active_selectors] == ["c", "a", "b"]
 
     @pytest.mark.asyncio
     async def test_has_selector(self, sp: SelectorProvider) -> None:

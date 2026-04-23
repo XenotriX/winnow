@@ -43,8 +43,8 @@ class SelectorProvider:
         return list(self._selectors)
 
     @property
-    def active_selectors(self) -> list[str]:
-        return [s.path for s in self._selectors if s.enabled]
+    def active_selectors(self) -> list[Selector]:
+        return [s for s in self._selectors if s.enabled]
 
     def has_selector(self, path: str) -> bool:
         return any(s.path == path for s in self._selectors)

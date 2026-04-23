@@ -2,13 +2,12 @@ import functools
 import json
 import math
 import re
-from collections.abc import Iterable, Sequence
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 
 import jq
 from pydantic import BaseModel, Discriminator, Field
 
-from jnav.json_model import JsonValue, to_json
+from jnav.json_model import JsonValue
 
 
 class Filter(BaseModel):
@@ -128,17 +127,6 @@ def check_filter_warning(expression: str) -> str | None:
     return None
 
 
-def get_nested(entry: JsonValue, path: str) -> JsonValue:
-    try:
-        json = to_json(entry)
-        results = cast(list[JsonValue], _compile_jq(path).input_text(json).all())
-    except ValueError:
-        return None
-    if len(results) == 1:
-        return results[0]
-    return results
-
-
 def jq_value_literal(value: object) -> str:
     if isinstance(value, str):
         return json.dumps(value)
@@ -151,46 +139,3 @@ def jq_value_literal(value: object) -> str:
             raise ValueError(f"jq does not support {value!r}")
         return str(value)
     return json.dumps(value)
-
-
-def _jq_path_to_str(parts: Sequence[str | int]) -> str:
-    result = ""
-    for p in parts:
-        if isinstance(p, int):
-            result += f"[{p}]"
-        else:
-            result = f"{result}.{p}" if result else p
-    return result
-
-
-def resolve_selected_paths(columns: Iterable[str], entry: JsonValue) -> set[str]:
-    """Expand jq column expressions into concrete paths for a specific entry."""
-    result: set[str] = set()
-    for col in columns:
-        if "[]" not in col and "|" not in col:
-            result.add(col.lstrip("."))
-            continue
-        jq_path = col
-        try:
-            raw = jq.compile(f"[path({jq_path})]").input_value(entry).first()
-            assert isinstance(raw, list)
-            for parts in raw:
-                result.add(_jq_path_to_str(cast(Sequence[str | int], parts)))
-            continue
-        except ValueError:
-            pass
-        try:
-            results = jq.compile(jq_path).input_value(entry).all()
-            base_expr = jq_path.split("|")[0].strip()
-            raw_bases = jq.compile(f"[path({base_expr})]").input_value(entry).first()
-            assert isinstance(raw_bases, list)
-            for base_parts in raw_bases:
-                base = _jq_path_to_str(cast(Sequence[str | int], base_parts))
-                for r in results:
-                    if isinstance(r, dict):
-                        r = cast(dict[str, object], r)
-                        for key in r:
-                            result.add(f"{base}.{key}")
-        except ValueError:
-            result.add(col)
-    return result
