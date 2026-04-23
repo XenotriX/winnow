@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Any, cast
 
 import orjson
 
@@ -19,8 +18,9 @@ def parse_entry(line: str) -> ParsedEntry | None:
     stripped = line.strip()
     if not stripped:
         return None
-    parsed = _try_parse_json(stripped)
-    if not isinstance(parsed, dict):
+    try:
+        parsed = orjson.loads(stripped)
+    except orjson.JSONDecodeError, ValueError:
         return None
     expanded = expand(parsed)
     return ParsedEntry(
@@ -36,21 +36,10 @@ def expand(value: JsonValue) -> JsonValue:
     elif isinstance(value, list):
         return [expand(v) for v in value]
     elif isinstance(value, str):
-        parsed = _try_parse_json(value)
-        if parsed is not None:
-            return ExpandedString(original=value, parsed=expand(parsed))
-        return value
+        try:
+            parsed = orjson.loads(value)
+        except orjson.JSONDecodeError, ValueError:
+            return value
+        return ExpandedString(original=value, parsed=expand(parsed))
     else:
         return value
-
-
-def _try_parse_json(value: str) -> dict[str, Any] | list[Any] | None:
-    if not value or value[0] not in ("{", "["):
-        return None
-    try:
-        parsed = orjson.loads(value)
-    except orjson.JSONDecodeError, ValueError:
-        return None
-    if isinstance(parsed, (dict, list)) and parsed:
-        return cast(dict[str, Any] | list[Any], parsed)
-    return None

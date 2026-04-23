@@ -17,8 +17,10 @@ class TestParseEntry:
     def test_empty_line(self) -> None:
         assert parse_entry("") is None
 
-    def test_json_array_rejected(self) -> None:
-        assert parse_entry("[1, 2, 3]") is None
+    def test_json_array(self) -> None:
+        result = parse_entry("[1, 2, 3]")
+        assert result is not None
+        assert result.expanded == [1, 2, 3]
 
     def test_whitespace_stripped(self) -> None:
         result = parse_entry('  {"a": 1}  \n')
@@ -47,7 +49,47 @@ class TestParseEntry:
         assert isinstance(result.expanded, dict)
         assert result.expanded["msg"] == "plain text"
 
-    def test_empty_json_string_not_expanded(self) -> None:
+    def test_empty_json_string_expanded(self) -> None:
         result = parse_entry('{"a": "{}", "b": "[]"}')
         assert result is not None
-        assert result.expanded == {"a": "{}", "b": "[]"}
+        assert isinstance(result.expanded, dict)
+        assert isinstance(result.expanded["a"], ExpandedString)
+        assert isinstance(result.expanded["b"], ExpandedString)
+
+    def test_top_level_int(self) -> None:
+        result = parse_entry("42")
+        assert result is not None
+        assert type(result.expanded) is int
+        assert result.expanded == 42
+
+    def test_top_level_string(self) -> None:
+        result = parse_entry('"hello"')
+        assert result is not None
+        assert type(result.expanded) is str
+        assert result.expanded == "hello"
+
+    def test_top_level_float(self) -> None:
+        result = parse_entry("3.14")
+        assert result is not None
+        assert type(result.expanded) is float
+        assert result.expanded == 3.14
+
+    def test_top_level_bool(self) -> None:
+        result = parse_entry("true")
+        assert result is not None
+        assert type(result.expanded) is bool
+        assert result.expanded is True
+
+    def test_top_level_null(self) -> None:
+        result = parse_entry("null")
+        assert result is not None
+        assert result.expanded is None
+
+    def test_top_level_json_string(self) -> None:
+        inner = '{"x": 1}'
+        outer = json.dumps(inner)
+        result = parse_entry(outer)
+        assert result is not None
+        assert isinstance(result.expanded, ExpandedString)
+        assert result.expanded.original == inner
+        assert result.expanded.parsed == {"x": 1}
