@@ -36,6 +36,9 @@ def expand(value: JsonValue) -> JsonValue:
     elif isinstance(value, list):
         return [expand(v) for v in value]
     elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped.startswith(("{", "[")) or not stripped.endswith(("}", "]")):
+            return value
         try:
             parsed = orjson.loads(value)
         except orjson.JSONDecodeError, ValueError:

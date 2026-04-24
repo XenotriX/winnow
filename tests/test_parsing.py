@@ -49,6 +49,12 @@ class TestParseEntry:
         assert isinstance(result.expanded, dict)
         assert result.expanded["msg"] == "plain text"
 
+    def test_valid_non_container_json_not_expanded(self) -> None:
+        result = parse_entry('{"data": "0"}')
+        assert result is not None
+        assert isinstance(result.expanded, dict)
+        assert result.expanded["data"] == "0"
+
     def test_empty_json_string_expanded(self) -> None:
         result = parse_entry('{"a": "{}", "b": "[]"}')
         assert result is not None
