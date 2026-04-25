@@ -26,6 +26,8 @@ from .reading import read_file, read_pipe, setup_stdin_pipe
 
 logging.getLogger("aioreactive").setLevel(logging.WARNING)
 
+logger = logging.getLogger(__name__)
+
 _STATE_DIR = Path(user_data_dir("jnav"))
 
 
@@ -52,7 +54,21 @@ async def _run(file: str | None, follow: bool) -> None:
         raise SystemExit(1)
 
     state_file = _state_file_for(file) if file else None
-    initial_state = app_state.load(state_file) if state_file else app_state.AppState()
+    if state_file:
+        logger.info(
+            "Loading state from file",
+            extra={
+                "log_file": file,
+                "state_file": str(state_file),
+            },
+        )
+        initial_state = app_state.load(state_file)
+    else:
+        logger.info(
+            "No state file for input, starting with default state",
+            extra={"log_file": file},
+        )
+        initial_state = app_state.AppState()
 
     filter_provider = FilterProvider()
     role_mapper = RoleMapper()
