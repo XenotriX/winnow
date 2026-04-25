@@ -1,12 +1,17 @@
+import logging
 from datetime import UTC, datetime
 
 from rich.style import Style
 from rich.text import Text
 
+from jnav.selector_provider import Selector
+
 from .field_mapping import FieldMapping, TimestampFormat
 from .parsing import ParsedEntry
 from .search_engine import SearchEngine
 from .tree_rendering import highlight_text
+
+logger = logging.getLogger(__name__)
 
 LEVEL_COMPONENTS = {
     "error": "summary--level-error",
@@ -68,16 +73,16 @@ def render_summary(
     _hl = highlight_style or Style()
     parts: list[str | tuple[str, str | Style]] = [" "]
 
-    assert isinstance(parsed.expanded, dict)
-
     if mapping.timestamp is not None:
-        ts_val = parsed.expanded.get(mapping.timestamp.path)
+        sel = Selector(expression=mapping.timestamp.path)
+        ts_val = sel.resolve(parsed.expanded)
         if ts_val not in (None, ""):
             parts.append((format_timestamp(ts_val, mapping.timestamp.format), _ts))
             parts.append(" ")
 
     if mapping.level is not None:
-        level_val = parsed.expanded.get(mapping.level)
+        sel = Selector(expression=mapping.level)
+        level_val = sel.resolve(parsed.expanded)
         level_str = str(level_val) if level_val else ""
         if level_str:
             component = LEVEL_COMPONENTS.get(level_str.strip().lower())
@@ -89,7 +94,8 @@ def render_summary(
             parts.append(" ")
 
     if mapping.message is not None:
-        msg_val = parsed.expanded.get(mapping.message)
+        sel = Selector(expression=mapping.message)
+        msg_val = sel.resolve(parsed.expanded)
         msg_str = str(msg_val) if msg_val or msg_val == 0 else ""
         msg_str = msg_str.replace("\r\n", "\n").replace("\r", "\n")
         for i, seg in enumerate(msg_str.split("\n")):

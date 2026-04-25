@@ -443,7 +443,7 @@ class TestRootLabel:
 
     @pytest.mark.asyncio
     async def test_timestamp_appended_when_role_mapper_has_one(self) -> None:
-        app = _PilotApp(timestamp=TimestampField(path="ts", format="iso8601"))
+        app = _PilotApp(timestamp=TimestampField(path=".ts", format="iso8601"))
         async with app.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
             tree = app.query_one(DetailTree)
@@ -456,7 +456,7 @@ class TestRootLabel:
 
     @pytest.mark.asyncio
     async def test_empty_timestamp_value_not_rendered(self) -> None:
-        app = _PilotApp(timestamp=TimestampField(path="ts", format="iso8601"))
+        app = _PilotApp(timestamp=TimestampField(path=".ts", format="iso8601"))
         async with app.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
             tree = app.query_one(DetailTree)
@@ -636,7 +636,7 @@ class TestRerenderOnSignal:
             await pilot.pause()
             assert tree.root.label.plain == "#1"
             await app.role_mapper.set_mapping(
-                FieldMapping(timestamp=TimestampField(path="ts", format="iso8601"))
+                FieldMapping(timestamp=TimestampField(path=".ts", format="iso8601"))
             )
             await pilot.pause()
             assert "12:34:56" in tree.root.label.plain

@@ -172,8 +172,8 @@ class TestInitialBuild:
             await pilot.pause()
             lv = _query_lv(app)
             await lv.initial_build()
-            assert "level" in app.role_mapper.all_fields
-            assert "message" in app.role_mapper.all_fields
+            assert ".level" in app.role_mapper.all_fields
+            assert ".message" in app.role_mapper.all_fields
             assert lv.index == 0
 
     @pytest.mark.asyncio

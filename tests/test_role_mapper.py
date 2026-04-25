@@ -27,19 +27,19 @@ class TestDiscover:
             _ie(0, {"level": "INFO", "message": "hi", "extra": 1})
         ])
 
-        assert "level" in role_mapper.all_fields
-        assert "message" in role_mapper.all_fields
-        assert "extra" in role_mapper.all_fields
+        assert ".level" in role_mapper.all_fields
+        assert ".message" in role_mapper.all_fields
+        assert ".extra" in role_mapper.all_fields
 
     @pytest.mark.asyncio
     async def test_grows_incrementally(self, role_mapper: RoleMapper) -> None:
         await role_mapper.discover([_ie(0, {"a": 1})])
 
-        assert role_mapper.all_fields == {"a"}
+        assert role_mapper.all_fields == {".", ".a"}
 
         await role_mapper.discover([_ie(1, {"a": 2, "b": 3})])
 
-        assert role_mapper.all_fields == {"a", "b"}
+        assert role_mapper.all_fields == {".", ".a", ".b"}
 
 
 class TestDiscoverMappingDetection:
@@ -52,24 +52,24 @@ class TestDiscoverMappingDetection:
         ])
 
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="ts", format="iso8601"
+            path=".ts", format="iso8601"
         )
-        assert role_mapper.mapping.level == "level"
-        assert role_mapper.mapping.message == "message"
+        assert role_mapper.mapping.level == ".level"
+        assert role_mapper.mapping.message == ".message"
 
     @pytest.mark.asyncio
     async def test_keeps_filling_missing_roles_across_batches(
         self, role_mapper: RoleMapper
     ) -> None:
         await role_mapper.discover([_ie(0, {"level": "INFO"})])
-        assert role_mapper.mapping.level == "level"
+        assert role_mapper.mapping.level == ".level"
         assert role_mapper.mapping.timestamp is None
 
         await role_mapper.discover([
             _ie(1, {"level": "WARN", "ts": "2025-01-01T00:00:00"})
         ])
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="ts", format="iso8601"
+            path=".ts", format="iso8601"
         )
 
     @pytest.mark.asyncio
@@ -96,10 +96,10 @@ class TestDiscoverMappingDetection:
             "message": "hi",
         })
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="ts", format="iso8601"
+            path=".ts", format="iso8601"
         )
-        assert role_mapper.mapping.level == "level"
-        assert role_mapper.mapping.message == "message"
+        assert role_mapper.mapping.level == ".level"
+        assert role_mapper.mapping.message == ".message"
 
         events, collect = make_signal_collector()
         await role_mapper.on_change.subscribe_async(collect)
@@ -112,7 +112,7 @@ class TestDiscoverMappingDetection:
         })
 
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="ts", format="iso8601"
+            path=".ts", format="iso8601"
         )
         assert len(events) == 0
 
@@ -122,9 +122,9 @@ class TestDiscoverMappingDetection:
     ) -> None:
         await role_mapper.set_mapping(
             FieldMapping(
-                timestamp=TimestampField(path="ts", format="iso8601"),
-                level="level",
-                message="message",
+                timestamp=TimestampField(path=".ts", format="iso8601"),
+                level=".level",
+                message=".message",
             )
         )
 
@@ -144,7 +144,7 @@ class TestDiscoverMappingDetection:
     async def test_partial_set_mapping_still_fills_remaining_roles(
         self, role_mapper: RoleMapper
     ) -> None:
-        await role_mapper.set_mapping(FieldMapping(level="level"))
+        await role_mapper.set_mapping(FieldMapping(level=".level"))
 
         await role_mapper.discover_from_entry({
             "ts": "2025-01-01T00:00:00",
@@ -153,10 +153,10 @@ class TestDiscoverMappingDetection:
         })
 
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="ts", format="iso8601"
+            path=".ts", format="iso8601"
         )
-        assert role_mapper.mapping.level == "level"
-        assert role_mapper.mapping.message == "message"
+        assert role_mapper.mapping.level == ".level"
+        assert role_mapper.mapping.message == ".message"
 
     @pytest.mark.asyncio
     async def test_empty_batch_does_not_trigger_detection(
@@ -200,14 +200,14 @@ class TestSetMapping:
 
         await role_mapper.set_mapping(
             FieldMapping(
-                timestamp=TimestampField(path="ts", format="iso8601"),
+                timestamp=TimestampField(path=".ts", format="iso8601"),
                 level="level",
                 message="message",
             )
         )
 
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="ts", format="iso8601"
+            path=".ts", format="iso8601"
         )
         assert len(events) == 1
 
@@ -221,10 +221,10 @@ class TestKnownFormats:
             "message": "hello",
         })
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="@timestamp", format="iso8601"
+            path='.["@timestamp"]', format="iso8601"
         )
-        assert role_mapper.mapping.level == "level"
-        assert role_mapper.mapping.message == "message"
+        assert role_mapper.mapping.level == ".level"
+        assert role_mapper.mapping.message == ".message"
 
     @pytest.mark.asyncio
     async def test_bunyan_style(self, role_mapper: RoleMapper) -> None:
@@ -234,10 +234,10 @@ class TestKnownFormats:
             "msg": "hi",
         })
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="time", format="iso8601"
+            path=".time", format="iso8601"
         )
-        assert role_mapper.mapping.level == "level"
-        assert role_mapper.mapping.message == "msg"
+        assert role_mapper.mapping.level == ".level"
+        assert role_mapper.mapping.message == ".msg"
 
     @pytest.mark.asyncio
     async def test_pino_epoch_ms(self, role_mapper: RoleMapper) -> None:
@@ -247,7 +247,7 @@ class TestKnownFormats:
             "msg": "hi",
         })
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="time", format="epoch_ms"
+            path=".time", format="epoch_ms"
         )
 
     @pytest.mark.asyncio
@@ -258,7 +258,7 @@ class TestKnownFormats:
             "msg": "hi",
         })
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="ts", format="iso8601"
+            path=".ts", format="iso8601"
         )
 
     @pytest.mark.asyncio
@@ -269,10 +269,10 @@ class TestKnownFormats:
             "@m": "hi",
         })
         assert role_mapper.mapping.timestamp == TimestampField(
-            path="@t", format="iso8601"
+            path='.["@t"]', format="iso8601"
         )
-        assert role_mapper.mapping.level == "@l"
-        assert role_mapper.mapping.message == "@m"
+        assert role_mapper.mapping.level == '.["@l"]'
+        assert role_mapper.mapping.message == '.["@m"]'
 
     @pytest.mark.asyncio
     async def test_priority_prefers_earlier_candidate(
@@ -287,14 +287,12 @@ class TestKnownFormats:
         })
         # @timestamp has higher priority than ts/time
         assert role_mapper.mapping.timestamp is not None
-        assert role_mapper.mapping.timestamp.path == "@timestamp"
+        assert role_mapper.mapping.timestamp.path == '.["@timestamp"]'
 
     @pytest.mark.asyncio
-    async def test_unknown_format_leaves_mapping_empty(
-        self, role_mapper: RoleMapper
-    ) -> None:
+    async def test_unknown_format_sets_message(self, role_mapper: RoleMapper) -> None:
         await role_mapper.discover_from_entry({"weird": "2025-01-01", "value": 42})
-        assert role_mapper.mapping == FieldMapping()
+        assert role_mapper.mapping == FieldMapping(message=".")
 
 
 class TestDetectTimestampFormat:
@@ -347,7 +345,7 @@ class TestFormatTimestamp:
 class TestFieldMappingRoundtrip:
     def test_full_roundtrip(self) -> None:
         mapping = FieldMapping(
-            timestamp=TimestampField(path="@timestamp", format="iso8601"),
+            timestamp=TimestampField(path='.["@timestamp"]', format="iso8601"),
             level="severity",
             message="msg",
         )

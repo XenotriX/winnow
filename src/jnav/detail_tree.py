@@ -2,7 +2,7 @@ import json
 import os
 import subprocess
 import tempfile
-from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
+from typing import TYPE_CHECKING, ClassVar, TypedDict
 
 from rich.text import Text
 from textual import on
@@ -20,7 +20,7 @@ from .node_path import NodePath
 from .parsing import ParsedEntry
 from .role_mapper import RoleMapper
 from .search_engine import SearchEngine
-from .selector_provider import SelectorProvider
+from .selector_provider import Selector, SelectorProvider
 from .tree_rendering import TreeStyle, render
 
 
@@ -145,11 +145,11 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
         self._entry_index = index
         self._rebuild_tree()
 
-    def _root_label(self, entry: dict[str, Any]) -> str:
+    def _root_label(self, entry: ParsedEntry) -> str:
         label = f"#{self._entry_index + 1}"
         ts_field = self._role_mapper.mapping.timestamp
         if ts_field is not None:
-            ts_val = entry.get(ts_field.path)
+            ts_val = Selector(expression=ts_field.path).resolve(entry.expanded)
             if ts_val not in (None, ""):
                 label += f" ({format_timestamp(ts_val, ts_field.format)})"
         if self.show_selected_only:
@@ -171,10 +171,9 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
         if self._entry is None:
             return
         entry = self._entry.expanded
-        assert isinstance(entry, dict)
 
         self.clear()
-        self.root.set_label(self._root_label(entry))
+        self.root.set_label(self._root_label(self._entry))
         root_data: TreeNodeData = {"path": NodePath(), "value": entry}
         self.root.data = root_data
         style = self._resolve_style()
