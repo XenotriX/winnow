@@ -429,66 +429,6 @@ class _PilotApp(App[None]):
             )
 
 
-class TestRootLabel:
-    @pytest.mark.asyncio
-    async def test_index_shown_as_one_based(self) -> None:
-        app = _PilotApp()
-        async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause()
-            tree = app.query_one(DetailTree)
-            entry = make_entry({"level": "INFO"})
-            tree.show_entry(entry, 4)
-            await pilot.pause()
-            assert tree.root.label.plain == "#5"
-
-    @pytest.mark.asyncio
-    async def test_timestamp_appended_when_role_mapper_has_one(self) -> None:
-        app = _PilotApp(timestamp=TimestampField(path=".ts", format="iso8601"))
-        async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause()
-            tree = app.query_one(DetailTree)
-            entry = make_entry({"ts": "2024-01-01T12:34:56"})
-            tree.show_entry(entry, 0)
-            await pilot.pause()
-            label = tree.root.label.plain
-            assert label.startswith("#1 (")
-            assert "12:34:56" in label
-
-    @pytest.mark.asyncio
-    async def test_empty_timestamp_value_not_rendered(self) -> None:
-        app = _PilotApp(timestamp=TimestampField(path=".ts", format="iso8601"))
-        async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause()
-            tree = app.query_one(DetailTree)
-            entry = make_entry({"ts": "", "level": "INFO"})
-            tree.show_entry(entry, 0)
-            await pilot.pause()
-            assert tree.root.label.plain == "#1"
-
-    @pytest.mark.asyncio
-    async def test_selected_suffix_present_when_show_selected_only(self) -> None:
-        app = _PilotApp()
-        async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause()
-            tree = app.query_one(DetailTree)
-            entry = make_entry({"level": "INFO"})
-            tree.show_selected_only = True
-            tree.show_entry(entry, 0)
-            await pilot.pause()
-            assert tree.root.label.plain == "#1 (selected)"
-
-    @pytest.mark.asyncio
-    async def test_no_selected_suffix_by_default(self) -> None:
-        app = _PilotApp()
-        async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause()
-            tree = app.query_one(DetailTree)
-            entry = make_entry({"level": "INFO"})
-            tree.show_entry(entry, 0)
-            await pilot.pause()
-            assert "(selected)" not in tree.root.label.plain
-
-
 class TestShowSelectedOnly:
     @pytest.mark.asyncio
     async def test_tree_contains_only_selected_paths(self) -> None:
@@ -634,12 +574,12 @@ class TestRerenderOnSignal:
             entry = make_entry({"ts": "2024-01-01T12:34:56", "level": "INFO"})
             tree.show_entry(entry, 0)
             await pilot.pause()
-            assert tree.root.label.plain == "#1"
+            initial_label = tree.root.label.plain
             await app.role_mapper.set_mapping(
                 FieldMapping(timestamp=TimestampField(path=".ts", format="iso8601"))
             )
             await pilot.pause()
-            assert "12:34:56" in tree.root.label.plain
+            assert initial_label != tree.root.label.plain
 
 
 class TestTempDirCreated:

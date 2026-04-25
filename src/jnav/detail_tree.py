@@ -15,12 +15,12 @@ from .filter_provider import FilterProvider
 from .filtering import jq_value_literal
 from .json_model import JsonValue, children, is_container
 from .key_sequences import KeySequence, KeySequenceMixin
-from .log_entry_item import format_timestamp
+from .log_entry_item import render_summary
 from .node_path import NodePath
 from .parsing import ParsedEntry
 from .role_mapper import RoleMapper
 from .search_engine import SearchEngine
-from .selector_provider import Selector, SelectorProvider
+from .selector_provider import SelectorProvider
 from .tree_rendering import TreeStyle, render
 
 
@@ -145,16 +145,8 @@ class DetailTree(KeySequenceMixin, Tree[TreeNodeData]):
         self._entry_index = index
         self._rebuild_tree()
 
-    def _root_label(self, entry: ParsedEntry) -> str:
-        label = f"#{self._entry_index + 1}"
-        ts_field = self._role_mapper.mapping.timestamp
-        if ts_field is not None:
-            ts_val = Selector(expression=ts_field.path).resolve(entry.expanded)
-            if ts_val not in (None, ""):
-                label += f" ({format_timestamp(ts_val, ts_field.format)})"
-        if self.show_selected_only:
-            label += " (selected)"
-        return label
+    def _root_label(self, entry: ParsedEntry) -> Text:
+        return render_summary(entry, self._role_mapper.mapping)
 
     def _resolve_style(self) -> TreeStyle:
         return TreeStyle(
